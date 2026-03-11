@@ -22,7 +22,16 @@ export async function getAllUsers() {
 
 export async function createUser(email, password, profileData) {
   // Crea el usuario en Auth
-  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  let cred;
+try {
+  cred = await createUserWithEmailAndPassword(auth, email, password);
+} catch(e) {
+  if (e.code === 'auth/email-already-in-use') {
+    cred = await signInWithEmailAndPassword(auth, email, password);
+  } else {
+    throw e;
+  }
+}
   // Guarda el perfil en Firestore
   await setDoc(doc(db, "users", cred.user.uid), {
     ...profileData,
