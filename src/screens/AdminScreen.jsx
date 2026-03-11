@@ -184,7 +184,7 @@ function StudentsTab({ students, users, setStudents, setSaving }) {
 function TeachersTab({ teachers, users, setUsers, setSaving }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name:"", email:"", password:"", subject:"" });
-  const subjects = ["Matemática","Lengua","Historia","Ciencias Naturales","Educación Física","Inglés","Geografía","Biología","Química","Física","Arte","Música"];
+  const subjects = ["Matemática","Tecnología","Lengua y Literatura","Inglés","Lenguaje de las Artes Visuales","Psicología","Geografía","Política y Ciudadanía","Filosofía","Biología","Producción de las Artes Visuales","Educación Física","Artes Visuales y T.I.C.","Química","Educación Artística","Historia","Física","Economía","Formación para la Vida y el Trabajo","Sociología","Formación Ética","E.O.I."];
 
   async function addTeacher() {
     if (!form.name || !form.email || !form.password || !form.subject) return;
