@@ -7,7 +7,7 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAHx-regu9g_6H4Pj0Mi0AE9eQPc1mRgrI",
+  apiKey: "AIzaSyAHx-regu9g_6H4Pj0MiOAE9eQPc1mRgrI",
   authDomain: "gestionvisco-a0d7a.firebaseapp.com",
   projectId: "gestionvisco-a0d7a",
   storageBucket: "gestionvisco-a0d7a.firebasestorage.app",
