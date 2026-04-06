@@ -5,9 +5,20 @@ import {
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  deleteUser as fbDeleteUser
 } from "firebase/auth";
 import { db, auth } from "./firebase";
+
+// ─── Caché en memoria ─────────────────────────────────────────────
+const cache = {
+  users: null,
+  students: null,
+  grades: null,
+};
+
+export function invalidateCache(key) {
+  if (key) cache[key] = null;
+  else { cache.users = null; cache.students = null; cache.grades = null; }
+}
 
 // ─── Usuarios / Perfiles ──────────────────────────────────────────
 export async function getUserProfile(uid) {
@@ -16,43 +27,48 @@ export async function getUserProfile(uid) {
 }
 
 export async function getAllUsers() {
+  if (cache.users) return cache.users;
   const snap = await getDocs(collection(db, "users"));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  cache.users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return cache.users;
 }
 
 export async function createUser(email, password, profileData) {
-  // Crea el usuario en Auth
   let cred;
-try {
-  cred = await createUserWithEmailAndPassword(auth, email, password);
-} catch(e) {
-  if (e.code === 'auth/email-already-in-use') {
-    cred = await signInWithEmailAndPassword(auth, email, password);
-  } else {
-    throw e;
+  try {
+    cred = await createUserWithEmailAndPassword(auth, email, password);
+  } catch(e) {
+    if (e.code === 'auth/email-already-in-use') {
+      throw new Error("Este email ya está registrado. Usá otro email para este usuario.");
+    } else {
+      throw e;
+    }
   }
-}
-  // Guarda el perfil en Firestore
   await setDoc(doc(db, "users", cred.user.uid), {
     ...profileData,
     email,
     createdAt: serverTimestamp()
   });
+  cache.users = null; // invalidar caché
   return cred.user.uid;
 }
 
 export async function updateUserProfile(uid, data) {
   await updateDoc(doc(db, "users", uid), data);
+  cache.users = null;
 }
 
 export async function deleteUserProfile(uid) {
   await deleteDoc(doc(db, "users", uid));
+  cache.users = null;
 }
 
 // ─── Alumnos ──────────────────────────────────────────────────────
 export async function getAllStudents() {
+  if (cache.students) return cache.students;
   const snap = await getDocs(query(collection(db, "students"), orderBy("name")));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  cache.students = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return cache.students;
 }
 
 export async function createStudent(data) {
@@ -60,24 +76,31 @@ export async function createStudent(data) {
     ...data,
     createdAt: serverTimestamp()
   });
+  cache.students = null;
   return ref.id;
 }
 
 export async function updateStudent(id, data) {
   await updateDoc(doc(db, "students", id), data);
+  cache.students = null;
 }
 
 export async function deleteStudent(id) {
   await deleteDoc(doc(db, "students", id));
+  cache.students = null;
 }
 
 // ─── Notas / Evaluaciones ─────────────────────────────────────────
 export async function getAllGrades() {
+  if (cache.grades) return cache.grades;
   const snap = await getDocs(query(collection(db, "grades"), orderBy("date", "desc")));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  cache.grades = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return cache.grades;
 }
 
 export async function getGradesByStudent(studentId) {
+  // Usa caché global si está disponible
+  if (cache.grades) return cache.grades.filter(g => g.studentId === studentId);
   const snap = await getDocs(query(
     collection(db, "grades"),
     where("studentId", "==", studentId),
@@ -87,6 +110,8 @@ export async function getGradesByStudent(studentId) {
 }
 
 export async function getGradesByTeacher(teacherId) {
+  // Usa caché global si está disponible
+  if (cache.grades) return cache.grades.filter(g => g.teacherId === teacherId);
   const snap = await getDocs(query(
     collection(db, "grades"),
     where("teacherId", "==", teacherId),
@@ -100,11 +125,13 @@ export async function createGrade(data) {
     ...data,
     createdAt: serverTimestamp()
   });
+  cache.grades = null;
   return ref.id;
 }
 
 export async function deleteGrade(id) {
   await deleteDoc(doc(db, "grades", id));
+  cache.grades = null;
 }
 
 // ─── Login ────────────────────────────────────────────────────────
