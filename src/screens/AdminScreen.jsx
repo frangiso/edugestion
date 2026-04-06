@@ -119,6 +119,8 @@ function StudentsTab({ students, users, setStudents, setSaving }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name:"", grade:"", tutorEmail:"" });
 
+  const GRADES = ["1°","2°","3°","4°","5°","6°"];
+
   async function addStudent() {
     if (!form.name || !form.grade) return;
     setSaving(true);
@@ -152,7 +154,13 @@ function StudentsTab({ students, users, setStudents, setSaving }) {
         <div className="card fade" style={{ padding:"24px", marginBottom:"20px", border:"2px solid #e0e7ff" }}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"16px" }}>
             <div><label>Nombre completo</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Nombre Apellido" /></div>
-            <div><label>Año / División</label><input value={form.grade} onChange={e=>setForm({...form,grade:e.target.value})} placeholder="3°A" /></div>
+            <div>
+              <label>Año</label>
+              <select value={form.grade} onChange={e=>setForm({...form,grade:e.target.value})}>
+                <option value="">Seleccionar...</option>
+                {GRADES.map(g=><option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
             <div><label>Email del tutor</label><input value={form.tutorEmail} onChange={e=>setForm({...form,tutorEmail:e.target.value})} placeholder="tutor@email.com" /></div>
           </div>
           <button className="btn-primary" onClick={addStudent} style={{ marginTop:"16px" }}>Guardar alumno</button>
@@ -181,20 +189,31 @@ function StudentsTab({ students, users, setStudents, setSaving }) {
   );
 }
 
+const SUBJECTS = ["Matemática","Tecnología","Lengua y Literatura","Inglés","Lenguaje de las Artes Visuales","Psicología","Geografía","Política y Ciudadanía","Filosofía","Biología","Producción de las Artes Visuales","Educación Física","Artes Visuales y T.I.C.","Química","Educación Artística","Historia","Física","Economía","Formación para la Vida y el Trabajo","Sociología","Formación Ética","E.O.I."];
+
 function TeachersTab({ teachers, users, setUsers, setSaving }) {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name:"", email:"", password:"", subject:"" });
-  const subjects = ["Matemática","Tecnología","Lengua y Literatura","Inglés","Lenguaje de las Artes Visuales","Psicología","Geografía","Política y Ciudadanía","Filosofía","Biología","Producción de las Artes Visuales","Educación Física","Artes Visuales y T.I.C.","Química","Educación Artística","Historia","Física","Economía","Formación para la Vida y el Trabajo","Sociología","Formación Ética","E.O.I."];
+  const [form, setForm] = useState({ name:"", email:"", password:"", subjects:[] });
+
+  function toggleSubject(s) {
+    setForm(f => ({
+      ...f,
+      subjects: f.subjects.includes(s) ? f.subjects.filter(x=>x!==s) : [...f.subjects, s]
+    }));
+  }
 
   async function addTeacher() {
-    if (!form.name || !form.email || !form.password || !form.subject) return;
+    if (!form.name || !form.email || !form.password || form.subjects.length === 0) {
+      alert("Completá todos los campos y seleccioná al menos una materia");
+      return;
+    }
     setSaving(true);
     try {
-      const uid = await createUser(form.email, form.password, { name:form.name, subject:form.subject, role:"teacher" });
-      setUsers(prev => [...prev, { id:uid, role:"teacher", name:form.name, email:form.email, subject:form.subject }]);
-      setForm({ name:"", email:"", password:"", subject:"" });
+      const uid = await createUser(form.email, form.password, { name:form.name, subjects:form.subjects, subject:form.subjects[0], role:"teacher" });
+      setUsers(prev => [...prev, { id:uid, role:"teacher", name:form.name, email:form.email, subjects:form.subjects, subject:form.subjects[0] }]);
+      setForm({ name:"", email:"", password:"", subjects:[] });
       setShowForm(false);
-    } catch(e) { alert("Error: " + e.message); }
+    } catch(e) { alert(e.message); }
     setSaving(false);
   }
 
@@ -214,34 +233,41 @@ function TeachersTab({ teachers, users, setUsers, setSaving }) {
       </div>
       {showForm && (
         <div className="card fade" style={{ padding:"24px", marginBottom:"20px", border:"2px solid #d1fae5" }}>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:"16px" }}>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"16px", marginBottom:"16px" }}>
             <div><label>Nombre</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Prof. Apellido" /></div>
-            <div><label>Email</label><input value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="materia@escuela.edu" /></div>
+            <div><label>Email</label><input value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="profe@email.com" /></div>
             <div><label>Contraseña inicial</label><input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} /></div>
-            <div><label>Materia</label>
-              <select value={form.subject} onChange={e=>setForm({...form,subject:e.target.value})}>
-                <option value="">Seleccionar...</option>
-                {subjects.map(s=><option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
           </div>
-          <button className="btn-primary" onClick={addTeacher} style={{ marginTop:"16px" }}>Guardar profesor</button>
+          <label>Materias que dicta ({form.subjects.length} seleccionadas)</label>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:"8px", marginTop:"8px", marginBottom:"16px" }}>
+            {SUBJECTS.map(s => (
+              <button key={s} onClick={()=>toggleSubject(s)} style={{ padding:"6px 12px", borderRadius:"20px", border:`2px solid ${form.subjects.includes(s)?"#065f46":"#e2e8f0"}`, background:form.subjects.includes(s)?"#d1fae5":"white", color:form.subjects.includes(s)?"#065f46":"#64748b", cursor:"pointer", fontSize:"0.8rem", fontWeight:600 }}>
+                {s}
+              </button>
+            ))}
+          </div>
+          <button className="btn-primary" onClick={addTeacher}>Guardar profesor</button>
         </div>
       )}
       <div className="card">
         <table style={{ width:"100%", borderCollapse:"collapse" }}>
           <thead><tr style={{ borderBottom:"2px solid #e2e8f0" }}>
-            {["Profesor","Email","Materia","Acciones"].map(h=><th key={h} style={{ padding:"12px 16px", textAlign:"left", fontSize:"0.75rem", color:"#94a3b8", textTransform:"uppercase" }}>{h}</th>)}
+            {["Profesor","Email","Materias","Acciones"].map(h=><th key={h} style={{ padding:"12px 16px", textAlign:"left", fontSize:"0.75rem", color:"#94a3b8", textTransform:"uppercase" }}>{h}</th>)}
           </tr></thead>
           <tbody>
-            {teachers.map(t => (
-              <tr key={t.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
-                <td style={{ padding:"12px 16px", fontWeight:600 }}>{t.name}</td>
-                <td style={{ padding:"12px 16px", color:"#64748b", fontSize:"0.85rem" }}>{t.email}</td>
-                <td style={{ padding:"12px 16px" }}><span className="badge" style={{ background:"#d1fae5", color:"#065f46" }}>{t.subject}</span></td>
-                <td style={{ padding:"12px 16px" }}><button className="btn-danger" onClick={()=>removeTeacher(t.id)}>Eliminar</button></td>
-              </tr>
-            ))}
+            {teachers.map(t => {
+              const materias = t.subjects || (t.subject ? [t.subject] : []);
+              return (
+                <tr key={t.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
+                  <td style={{ padding:"12px 16px", fontWeight:600 }}>{t.name}</td>
+                  <td style={{ padding:"12px 16px", color:"#64748b", fontSize:"0.85rem" }}>{t.email}</td>
+                  <td style={{ padding:"12px 16px" }}>
+                    {materias.map(m=><span key={m} className="badge" style={{ background:"#d1fae5", color:"#065f46", marginRight:"4px", marginBottom:"4px" }}>{m}</span>)}
+                  </td>
+                  <td style={{ padding:"12px 16px" }}><button className="btn-danger" onClick={()=>removeTeacher(t.id)}>Eliminar</button></td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -265,7 +291,7 @@ function ParentsTab({ parents, students, users, setUsers, setSaving }) {
       setUsers(prev => [...prev, { id:uid, role:"parent", name:form.name, email:form.email, childIds:form.childIds }]);
       setForm({ name:"", email:"", password:"", childIds:[] });
       setShowForm(false);
-    } catch(e) { alert("Error: " + e.message); }
+    } catch(e) { alert(e.message); }
     setSaving(false);
   }
 
@@ -290,8 +316,8 @@ function ParentsTab({ parents, students, users, setUsers, setSaving }) {
             <div><label>Email</label><input value={form.email} onChange={e=>setForm({...form,email:e.target.value})} /></div>
             <div><label>Contraseña inicial</label><input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} /></div>
           </div>
-          <label>Hijos asociados</label>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:"8px", marginTop:"4px", marginBottom:"16px" }}>
+          <label>Hijos asociados ({form.childIds.length} seleccionados)</label>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:"8px", marginTop:"8px", marginBottom:"16px" }}>
             {students.map(s => (
               <button key={s.id} onClick={()=>toggleChild(s.id)} style={{ padding:"6px 14px", borderRadius:"20px", border:`2px solid ${form.childIds.includes(s.id)?"#7c2d12":"#e2e8f0"}`, background:form.childIds.includes(s.id)?"#fff7ed":"white", color:form.childIds.includes(s.id)?"#7c2d12":"#64748b", cursor:"pointer", fontSize:"0.82rem", fontWeight:600 }}>
                 {s.name} ({s.grade})

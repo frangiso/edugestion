@@ -9,6 +9,10 @@ export default function TeacherScreen({ user, profile, logout }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Soporte para múltiples materias
+  const subjects = profile.subjects || (profile.subject ? [profile.subject] : []);
+  const [selectedSubject, setSelectedSubject] = useState(subjects[0] || "");
+
   useEffect(() => { loadAll(); }, []);
 
   async function loadAll() {
@@ -21,8 +25,21 @@ export default function TeacherScreen({ user, profile, logout }) {
   return (
     <div style={{ minHeight:"100vh", background:"#f0f4f8", fontFamily:"'Source Sans 3', sans-serif" }}>
       <style>{GLOBAL_STYLES}</style>
-      <TopBar profile={profile} saving={saving} logout={logout} subtitle={`Profesor · ${profile.subject}`} />
+      <TopBar profile={profile} saving={saving} logout={logout} subtitle={`Profesor · ${subjects.join(", ")}`} />
       <div style={{ maxWidth:"900px", margin:"0 auto", padding:"24px 20px" }}>
+
+        {/* Selector de materia si tiene más de una */}
+        {subjects.length > 1 && (
+          <div style={{ marginBottom:"20px", display:"flex", gap:"8px", flexWrap:"wrap" }}>
+            <span style={{ fontSize:"0.82rem", color:"#64748b", fontWeight:600, alignSelf:"center" }}>Materia activa:</span>
+            {subjects.map(s => (
+              <button key={s} onClick={()=>setSelectedSubject(s)} style={{ padding:"6px 14px", borderRadius:"20px", border:`2px solid ${selectedSubject===s?"#065f46":"#e2e8f0"}`, background:selectedSubject===s?"#d1fae5":"white", color:selectedSubject===s?"#065f46":"#64748b", cursor:"pointer", fontSize:"0.82rem", fontWeight:600 }}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div style={{ borderBottom:"2px solid #e2e8f0", marginBottom:"28px", display:"flex", gap:"4px" }}>
           {[["add","📝 Cargar nota"],["mygrades","📋 Mis evaluaciones"],["ranking","📊 Rendimiento"]].map(([k,l])=>(
             <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>setTab(k)}>{l}</button>
@@ -30,9 +47,9 @@ export default function TeacherScreen({ user, profile, logout }) {
         </div>
         {loading ? <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando...</div> : (
           <div className="fade" key={tab}>
-            {tab==="add" && <AddGrade user={user} profile={profile} students={students} grades={grades} setGrades={setGrades} setSaving={setSaving} />}
+            {tab==="add" && <AddGrade user={user} subject={selectedSubject} students={students} grades={grades} setGrades={setGrades} setSaving={setSaving} />}
             {tab==="mygrades" && <MyGrades grades={grades} students={students} setGrades={setGrades} setSaving={setSaving} />}
-            {tab==="ranking" && <Ranking students={students} grades={grades} profile={profile} />}
+            {tab==="ranking" && <Ranking students={students} grades={grades} subject={selectedSubject} />}
           </div>
         )}
       </div>
@@ -40,7 +57,7 @@ export default function TeacherScreen({ user, profile, logout }) {
   );
 }
 
-function AddGrade({ user, profile, students, grades, setGrades, setSaving }) {
+function AddGrade({ user, subject, students, grades, setGrades, setSaving }) {
   const [form, setForm] = useState({ studentId:"", score:"", type:"Examen", trimester:1, date:new Date().toISOString().split("T")[0], note:"" });
   const [success, setSuccess] = useState(false);
 
@@ -49,7 +66,7 @@ function AddGrade({ user, profile, students, grades, setGrades, setSaving }) {
     const score = parseFloat(form.score);
     if (score < 1 || score > 10) { alert("La nota debe estar entre 1 y 10"); return; }
     setSaving(true);
-    const data = { ...form, score, teacherId: user.uid, subject: profile.subject };
+    const data = { ...form, score, teacherId: user.uid, subject };
     const id = await createGrade(data);
     setGrades(prev => [{ id, ...data }, ...prev]);
     setForm({ studentId:"", score:"", type:"Examen", trimester:1, date:new Date().toISOString().split("T")[0], note:"" });
@@ -61,8 +78,8 @@ function AddGrade({ user, profile, students, grades, setGrades, setSaving }) {
   return (
     <div>
       <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 8px" }}>Cargar evaluación</h2>
-      <p style={{ color:"#64748b", marginBottom:"24px", fontSize:"0.9rem" }}>Materia: <strong>{profile.subject}</strong></p>
-      {success && <div className="fade" style={{ background:"#d1fae5", border:"1px solid #6ee7b7", borderRadius:"10px", padding:"12px 16px", marginBottom:"20px", color:"#065f46", fontWeight:600 }}>✅ Nota guardada en Firebase</div>}
+      <p style={{ color:"#64748b", marginBottom:"24px", fontSize:"0.9rem" }}>Materia: <strong>{subject}</strong></p>
+      {success && <div className="fade" style={{ background:"#d1fae5", border:"1px solid #6ee7b7", borderRadius:"10px", padding:"12px 16px", marginBottom:"20px", color:"#065f46", fontWeight:600 }}>✅ Nota guardada correctamente</div>}
       <div className="card" style={{ padding:"28px" }}>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"20px" }}>
           <div>
@@ -102,7 +119,7 @@ function AddGrade({ user, profile, students, grades, setGrades, setSaving }) {
             <div style={{ width:"56px", height:"56px", borderRadius:"50%", background:scoreColor(parseFloat(form.score)), display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontSize:"1.4rem", fontWeight:800 }}>{form.score}</div>
             <div>
               <div style={{ fontWeight:600, color:"#1e293b" }}>{students.find(s=>s.id===form.studentId)?.name || "Alumno no seleccionado"}</div>
-              <div style={{ fontSize:"0.82rem", color:"#64748b" }}>{profile.subject} · {form.type} · {trimNames[form.trimester-1]}</div>
+              <div style={{ fontSize:"0.82rem", color:"#64748b" }}>{subject} · {form.type} · {trimNames[form.trimester-1]}</div>
             </div>
           </div>
         )}
@@ -147,7 +164,7 @@ function MyGrades({ grades, students, setGrades, setSaving }) {
                 <div style={{ width:"44px", height:"44px", borderRadius:"50%", background:scoreColor(g.score), display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:800, fontSize:"1.1rem", flexShrink:0 }}>{g.score}</div>
                 <div style={{ flex:1 }}>
                   <div style={{ fontWeight:700, color:"#1e293b" }}>{student?.name}</div>
-                  <div style={{ fontSize:"0.8rem", color:"#64748b" }}>{g.type} · {trimNames[g.trimester-1]} · {g.date}</div>
+                  <div style={{ fontSize:"0.8rem", color:"#64748b" }}>{g.subject} · {g.type} · {trimNames[g.trimester-1]} · {g.date}</div>
                   {g.note && <div style={{ fontSize:"0.8rem", color:"#7c3aed", marginTop:"2px" }}>💬 {g.note}</div>}
                 </div>
                 <button className="btn-danger" onClick={()=>removeGrade(g.id)}>Eliminar</button>
@@ -160,13 +177,14 @@ function MyGrades({ grades, students, setGrades, setSaving }) {
   );
 }
 
-function Ranking({ students, grades, profile }) {
+function Ranking({ students, grades, subject }) {
+  const subjectGrades = grades.filter(g => g.subject === subject);
   return (
     <div>
-      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 20px" }}>Rendimiento — {profile.subject}</h2>
+      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 20px" }}>Rendimiento — {subject}</h2>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))", gap:"16px" }}>
         {students.map(s => {
-          const sg = grades.filter(g=>g.studentId===s.id);
+          const sg = subjectGrades.filter(g=>g.studentId===s.id);
           const sa = avg(sg.map(g=>g.score));
           const color = sa==="–" ? "#e2e8f0" : scoreColor(parseFloat(sa));
           return (
