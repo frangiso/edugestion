@@ -1,20 +1,17 @@
-// ─────────────────────────────────────────────────────────────────
-//  PASO 1: Reemplazá estos valores con los de tu proyecto Firebase
-//  (los encontrás en: Firebase Console → Tu proyecto → Configuración)
-// ─────────────────────────────────────────────────────────────────
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAHx-regu9g_6H4Pj0MiOAE9eQPc1mRgrI",
-  authDomain: "gestionvisco-a0d7a.firebaseapp.com",
-  projectId: "gestionvisco-a0d7a",
-  storageBucket: "gestionvisco-a0d7a.firebasestorage.app",
-  messagingSenderId: "396552599410",
-  appId: "1:396552599410:web:1ddc2b011e50f0fcb34feb"
+  apiKey: "AIzaSyChqvtTVsS4PfW6rE9Nu0OrBRtnESsXX_4",
+  authDomain: "edugestion-f42ac.firebaseapp.com",
+  projectId: "edugestion-f42ac",
+  storageBucket: "edugestion-f42ac.firebasestorage.app",
+  messagingSenderId: "598165332218",
+  appId: "1:598165332218:web:d8bdd6ea838eef87296943"
 };
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
