@@ -97,7 +97,6 @@ function Overview({ grades, users }) {
   );
 }
 
-// ─── Buscador de alumnos lazy ─────────────────────────────────────
 function StudentSearch({ onSelect, buttonLabel = "Seleccionar" }) {
   const [nameQ, setNameQ] = useState("");
   const [gradeQ, setGradeQ] = useState("");
@@ -122,19 +121,16 @@ function StudentSearch({ onSelect, buttonLabel = "Seleccionar" }) {
           <option value="">Todos los años</option>
           {GRADES.map(g=><option key={g} value={g}>{g}</option>)}
         </select>
-        <button className="btn-primary" onClick={doSearch} disabled={loading}>
-          {loading ? "Buscando..." : "Buscar"}
-        </button>
+        <button className="btn-primary" onClick={doSearch} disabled={loading}>{loading ? "Buscando..." : "Buscar"}</button>
       </div>
       {searched && results.length === 0 && <p style={{ color:"#94a3b8", fontSize:"0.85rem" }}>No se encontraron alumnos.</p>}
       {results.length > 0 && (
-        <div style={{ display:"flex", flexDirection:"column", gap:"6px", maxHeight:"300px", overflowY:"auto" }}>
+        <div style={{ display:"flex", flexDirection:"column", gap:"6px", maxHeight:"250px", overflowY:"auto" }}>
           {results.map(s => (
             <div key={s.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", background:"#f8fafc", borderRadius:"10px", border:"1px solid #e2e8f0" }}>
               <div>
                 <span style={{ fontWeight:600, color:"#1e293b" }}>{s.name}</span>
                 <span className="badge" style={{ background:"#dbeafe", color:"#1e40af", marginLeft:"8px" }}>{s.grade}</span>
-                {s.tutorEmail && <span style={{ fontSize:"0.75rem", color:"#94a3b8", marginLeft:"8px" }}>{s.tutorEmail}</span>}
               </div>
               {onSelect && <button className="btn-primary" onClick={()=>onSelect(s)} style={{ padding:"4px 12px", fontSize:"0.8rem" }}>{buttonLabel}</button>}
             </div>
@@ -184,7 +180,6 @@ function StudentsTab({ setSaving }) {
         <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>Alumnos</h2>
         <button className="btn-primary" onClick={()=>setShowForm(!showForm)}>{showForm?"Cancelar":"+ Nuevo alumno"}</button>
       </div>
-
       {showForm && (
         <div className="card fade" style={{ padding:"24px", marginBottom:"20px", border:"2px solid #e0e7ff" }}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"16px" }}>
@@ -201,15 +196,10 @@ function StudentsTab({ setSaving }) {
           <button className="btn-primary" onClick={addStudent} style={{ marginTop:"16px" }}>Guardar alumno</button>
         </div>
       )}
-
       <div className="card" style={{ padding:"24px", marginBottom:"20px" }}>
         <h3 style={{ margin:"0 0 16px", color:"#1e3a5f", fontSize:"1rem" }}>Buscar alumno</h3>
-        <StudentSearch
-          buttonLabel="Editar"
-          onSelect={s => { setEditStudent(s); setEditTutor(s.tutorEmail || ""); }}
-        />
+        <StudentSearch buttonLabel="Editar" onSelect={s => { setEditStudent(s); setEditTutor(s.tutorEmail || ""); }} />
       </div>
-
       {editStudent && (
         <div className="card fade" style={{ padding:"24px", border:"2px solid #e0e7ff" }}>
           <h3 style={{ margin:"0 0 16px", color:"#1e3a5f", fontSize:"1rem" }}>Editando: {editStudent.name} ({editStudent.grade})</h3>
@@ -233,10 +223,7 @@ function TeachersTab({ teachers, users, setUsers, setSaving }) {
   const [form, setForm] = useState({ name:"", email:"", password:"", subjects:[] });
 
   function toggleSubject(s) {
-    setForm(f => ({
-      ...f,
-      subjects: f.subjects.includes(s) ? f.subjects.filter(x=>x!==s) : [...f.subjects, s]
-    }));
+    setForm(f => ({ ...f, subjects: f.subjects.includes(s) ? f.subjects.filter(x=>x!==s) : [...f.subjects, s] }));
   }
 
   async function addTeacher() {
@@ -316,6 +303,12 @@ function ParentsTab({ parents, users, setUsers, setSaving }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name:"", email:"", password:"", childIds:[] });
   const [selectedChildren, setSelectedChildren] = useState([]);
+  const [searchName, setSearchName] = useState("");
+
+  // Buscador local sobre los tutores ya cargados
+  const filteredParents = searchName
+    ? parents.filter(p => p.name.toLowerCase().includes(searchName.toLowerCase()) || p.email.toLowerCase().includes(searchName.toLowerCase()))
+    : parents;
 
   function toggleChild(s) {
     setSelectedChildren(prev => prev.find(x=>x.id===s.id) ? prev.filter(x=>x.id!==s.id) : [...prev, s]);
@@ -327,7 +320,7 @@ function ParentsTab({ parents, users, setUsers, setSaving }) {
     setSaving(true);
     try {
       const uid = await createUser(form.email, form.password, { name:form.name, role:"parent", childIds:form.childIds });
-      setUsers(prev => [...prev, { id:uid, role:"parent", name:form.name, email:form.email, childIds:form.childIds }]);
+      setUsers(prev => [...prev, { id:uid, role:"parent", name:form.name, email:form.email, childIds:form.childIds, childrenNames: selectedChildren.map(c=>c.name) }]);
       setForm({ name:"", email:"", password:"", childIds:[] });
       setSelectedChildren([]);
       setShowForm(false);
@@ -346,9 +339,10 @@ function ParentsTab({ parents, users, setUsers, setSaving }) {
   return (
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px" }}>
-        <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>Padres / Tutores ({parents.length})</h2>
+        <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>Tutores ({parents.length})</h2>
         <button className="btn-primary" onClick={()=>setShowForm(!showForm)}>{showForm?"Cancelar":"+ Nuevo tutor"}</button>
       </div>
+
       {showForm && (
         <div className="card fade" style={{ padding:"24px", marginBottom:"20px", border:"2px solid #fed7aa" }}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"16px", marginBottom:"16px" }}>
@@ -359,7 +353,11 @@ function ParentsTab({ parents, users, setUsers, setSaving }) {
           <label>Buscar y vincular hijos ({selectedChildren.length} seleccionados)</label>
           {selectedChildren.length > 0 && (
             <div style={{ display:"flex", flexWrap:"wrap", gap:"6px", marginTop:"6px", marginBottom:"8px" }}>
-              {selectedChildren.map(s=><span key={s.id} className="badge" style={{ background:"#fff7ed", color:"#7c2d12" }}>{s.name} ({s.grade})</span>)}
+              {selectedChildren.map(s=>(
+                <span key={s.id} className="badge" style={{ background:"#fff7ed", color:"#7c2d12", cursor:"pointer" }} onClick={()=>toggleChild(s)}>
+                  {s.name} ({s.grade}) ✕
+                </span>
+              ))}
             </div>
           )}
           <div style={{ marginTop:"8px", marginBottom:"16px" }}>
@@ -368,23 +366,47 @@ function ParentsTab({ parents, users, setUsers, setSaving }) {
           <button className="btn-primary" onClick={addParent}>Guardar tutor</button>
         </div>
       )}
-      <div className="card">
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
-          <thead><tr style={{ borderBottom:"2px solid #e2e8f0" }}>
-            {["Tutor","Email","Hijos","Acciones"].map(h=><th key={h} style={{ padding:"12px 16px", textAlign:"left", fontSize:"0.75rem", color:"#94a3b8", textTransform:"uppercase" }}>{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {parents.map(p => (
-              <tr key={p.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
-                <td style={{ padding:"12px 16px", fontWeight:600 }}>{p.name}</td>
-                <td style={{ padding:"12px 16px", color:"#64748b", fontSize:"0.85rem" }}>{p.email}</td>
-                <td style={{ padding:"12px 16px", fontSize:"0.82rem", color:"#94a3b8" }}>{(p.childIds||[]).length} hijo(s)</td>
-                <td style={{ padding:"12px 16px" }}><button className="btn-danger" onClick={()=>removeParent(p.id)}>Eliminar</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+      {/* Buscador de tutores */}
+      <div style={{ marginBottom:"16px" }}>
+        <input
+          value={searchName}
+          onChange={e=>setSearchName(e.target.value)}
+          placeholder="🔍 Buscar tutor por nombre o email..."
+          style={{ width:"100%" }}
+        />
       </div>
+
+      {filteredParents.length === 0 ? (
+        <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}>
+          <p>No se encontraron tutores.</p>
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
+          {filteredParents.map(p => {
+            const childNames = p.childrenNames || [];
+            const childCount = (p.childIds||[]).length;
+            return (
+              <div key={p.id} className="card" style={{ padding:"16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontWeight:700, color:"#1e293b", fontSize:"0.95rem" }}>{p.name}</div>
+                  <div style={{ fontSize:"0.82rem", color:"#64748b", marginTop:"2px" }}>{p.email}</div>
+                  {childNames.length > 0 ? (
+                    <div style={{ marginTop:"6px", display:"flex", flexWrap:"wrap", gap:"4px" }}>
+                      {childNames.map((n,i)=><span key={i} className="badge" style={{ background:"#fff7ed", color:"#7c2d12" }}>{n}</span>)}
+                    </div>
+                  ) : childCount > 0 ? (
+                    <div style={{ fontSize:"0.78rem", color:"#94a3b8", marginTop:"4px" }}>{childCount} hijo(s) vinculado(s)</div>
+                  ) : (
+                    <div style={{ fontSize:"0.78rem", color:"#94a3b8", marginTop:"4px" }}>Sin hijos vinculados</div>
+                  )}
+                </div>
+                <button className="btn-danger" onClick={()=>removeParent(p.id)} style={{ marginLeft:"16px" }}>Eliminar</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -414,7 +436,6 @@ function AllGradesTab({ grades, users, setGrades, setSaving }) {
           ))}
         </div>
       </div>
-
       <div className="card" style={{ padding:"16px", marginBottom:"16px" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" }}>
           <label style={{ margin:0 }}>Filtrar por alumno</label>
@@ -426,7 +447,6 @@ function AllGradesTab({ grades, users, setGrades, setSaving }) {
           <StudentSearch buttonLabel="Filtrar" onSelect={setStudentFilter} />
         )}
       </div>
-
       <div className="card" style={{ overflow:"auto" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", minWidth:"700px" }}>
           <thead><tr style={{ borderBottom:"2px solid #e2e8f0" }}>

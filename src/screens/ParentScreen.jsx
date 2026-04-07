@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor } from "../components";
-import { getAllStudents, getGradesByStudent } from "../db";
+import { getChildrenByIds, getGradesByStudent } from "../db";
 
 export default function ParentScreen({ user, profile, logout }) {
   const [students, setStudents] = useState([]);
@@ -13,10 +13,8 @@ export default function ParentScreen({ user, profile, logout }) {
 
   async function loadData() {
     setLoading(true);
-    const allStudents = await getAllStudents();
-    const myChildren = allStudents.filter(s =>
-      (profile.childIds||[]).includes(s.id) || s.tutorEmail === profile.email
-    );
+    // Solo carga los hijos del tutor, no todos los alumnos
+    const myChildren = await getChildrenByIds(profile.childIds || [], profile.email);
     setStudents(myChildren);
     if (myChildren.length > 0) {
       setSelectedChild(myChildren[0]);
@@ -57,6 +55,7 @@ export default function ParentScreen({ user, profile, logout }) {
   childGrades.forEach(g => { if (!subjectMap[g.subject]) subjectMap[g.subject]=[]; subjectMap[g.subject].push(g); });
   const allChildGrades = child ? (gradesMap[child.id]||[]) : [];
   const globalAvg = avg(allChildGrades.map(g=>g.score));
+  const totalMaterias = Object.keys(allChildGrades.reduce((a,g)=>({...a,[g.subject]:1}),{})).length;
 
   return (
     <div style={{ minHeight:"100vh", background:"#f0f4f8", fontFamily:"'Source Sans 3',sans-serif" }}>
@@ -65,7 +64,7 @@ export default function ParentScreen({ user, profile, logout }) {
       <div style={{ maxWidth:"960px", margin:"0 auto", padding:"24px 20px" }}>
 
         {students.length > 1 && (
-          <div style={{ display:"flex", gap:"12px", marginBottom:"24px" }}>
+          <div style={{ display:"flex", gap:"12px", marginBottom:"24px", flexWrap:"wrap" }}>
             {students.map(c => (
               <button key={c.id} onClick={()=>setSelectedChild(c)} style={{ padding:"10px 20px", borderRadius:"12px", border:`2px solid ${child?.id===c.id?"#1e3a5f":"#e2e8f0"}`, background:child?.id===c.id?"#1e3a5f":"white", color:child?.id===c.id?"white":"#475569", cursor:"pointer", fontWeight:600, fontSize:"0.9rem" }}>
                 {c.name} <span style={{ opacity:0.6, fontSize:"0.8rem" }}>({c.grade})</span>
@@ -91,13 +90,13 @@ export default function ParentScreen({ user, profile, logout }) {
                   <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase", letterSpacing:"0.5px" }}>Evaluaciones</div>
                 </div>
                 <div>
-                  <div style={{ fontSize:"2rem", fontWeight:800, color:"#1e3a5f", fontFamily:"'Playfair Display',serif" }}>{Object.keys(subjectMap).length || Object.keys((gradesMap[child.id]||[]).reduce((a,g)=>({...a,[g.subject]:1}),{})).length}</div>
+                  <div style={{ fontSize:"2rem", fontWeight:800, color:"#1e3a5f", fontFamily:"'Playfair Display',serif" }}>{totalMaterias}</div>
                   <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase", letterSpacing:"0.5px" }}>Materias</div>
                 </div>
               </div>
             </div>
 
-            <div style={{ display:"flex", gap:"8px", marginBottom:"20px" }}>
+            <div style={{ display:"flex", gap:"8px", marginBottom:"20px", flexWrap:"wrap" }}>
               {[["📅 Todas",0],...trimNames.map((n,i)=>[n,i+1])].map(([l,v])=>(
                 <button key={v} onClick={()=>setTrim(v)} style={{ padding:"7px 16px", borderRadius:"20px", background:trim===v?"#1e3a5f":"white", color:trim===v?"white":"#64748b", border:`1px solid ${trim===v?"#1e3a5f":"#e2e8f0"}`, cursor:"pointer", fontSize:"0.82rem", fontWeight:600 }}>{l}</button>
               ))}
