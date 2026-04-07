@@ -10,7 +10,7 @@ import { db, auth } from "./firebase";
 
 // ─── Caché en memoria ─────────────────────────────────────────────
 const cache = {
-  users: null,
+  teachers: null, // solo profesores — son pocos y no cambian seguido
   grades: null,
 };
 
@@ -20,11 +20,31 @@ export async function getUserProfile(uid) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
-export async function getAllUsers() {
-  if (cache.users) return cache.users;
-  const snap = await getDocs(collection(db, "users"));
-  cache.users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  return cache.users;
+// Solo carga profesores (no tutores) — se cachean
+export async function getAllTeachers() {
+  if (cache.teachers) return cache.teachers;
+  const snap = await getDocs(query(
+    collection(db, "users"),
+    where("role", "==", "teacher")
+  ));
+  cache.teachers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return cache.teachers;
+}
+
+// Busca tutores por nombre o email — lazy, solo cuando se escribe
+export async function searchParents(searchText = "") {
+  const snap = await getDocs(query(
+    collection(db, "users"),
+    where("role", "==", "parent")
+  ));
+  let results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (searchText) {
+    const q = searchText.toLowerCase();
+    results = results.filter(p =>
+      p.name?.toLowerCase().includes(q) || p.email?.toLowerCase().includes(q)
+    );
+  }
+  return results;
 }
 
 export async function createUser(email, password, profileData) {
@@ -43,21 +63,21 @@ export async function createUser(email, password, profileData) {
     email,
     createdAt: serverTimestamp()
   });
-  cache.users = null;
+  cache.teachers = null;
   return cred.user.uid;
 }
 
 export async function updateUserProfile(uid, data) {
   await updateDoc(doc(db, "users", uid), data);
-  cache.users = null;
+  cache.teachers = null;
 }
 
 export async function deleteUserProfile(uid) {
   await deleteDoc(doc(db, "users", uid));
-  cache.users = null;
+  cache.teachers = null;
 }
 
-// ─── Alumnos (lazy - solo se cargan al buscar) ────────────────────
+// ─── Alumnos (lazy) ───────────────────────────────────────────────
 export async function searchStudents({ name = "", grade = "" } = {}) {
   if (grade && !name) {
     const snap = await getDocs(query(
@@ -79,15 +99,13 @@ export async function getAllStudents() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-// Carga solo los hijos del tutor por sus IDs — ahorra lecturas
+// Carga solo los hijos del tutor por sus IDs
 export async function getChildrenByIds(childIds = [], tutorEmail = "") {
   const results = [];
-  // Por IDs vinculados
   for (const id of childIds) {
     const snap = await getDoc(doc(db, "students", id));
     if (snap.exists()) results.push({ id: snap.id, ...snap.data() });
   }
-  // Por email del tutor (si no está en childIds)
   if (tutorEmail) {
     const snap = await getDocs(query(
       collection(db, "students"),
