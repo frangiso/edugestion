@@ -10,8 +10,9 @@ import { db, auth } from "./firebase";
 
 // ─── Caché en memoria ─────────────────────────────────────────────
 const cache = {
-  teachers: null, // solo profesores — son pocos y no cambian seguido
+  teachers: null,
   grades: null,
+  studentNames: {}, // cache de nombres por ID
 };
 
 // ─── Usuarios / Perfiles ──────────────────────────────────────────
@@ -20,7 +21,6 @@ export async function getUserProfile(uid) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
-// Solo carga profesores (no tutores) — se cachean
 export async function getAllTeachers() {
   if (cache.teachers) return cache.teachers;
   const snap = await getDocs(query(
@@ -31,7 +31,6 @@ export async function getAllTeachers() {
   return cache.teachers;
 }
 
-// Busca tutores por nombre o email — lazy, solo cuando se escribe
 export async function searchParents(searchText = "") {
   const snap = await getDocs(query(
     collection(db, "users"),
@@ -44,7 +43,48 @@ export async function searchParents(searchText = "") {
       p.name?.toLowerCase().includes(q) || p.email?.toLowerCase().includes(q)
     );
   }
+  // Para cada tutor, resolver nombres de hijos si no los tiene
+  results = await Promise.all(results.map(async p => {
+    if (p.childrenNames && p.childrenNames.length > 0) return p;
+    // No tiene childrenNames — resolvemos desde childIds
+    const names = await resolveChildrenNames(p.childIds || [], p.email);
+    // Actualizar en Firestore para no volver a resolver la próxima vez
+    if (names.length > 0) {
+      await updateDoc(doc(db, "users", p.id), { childrenNames: names });
+    }
+    return { ...p, childrenNames: names };
+  }));
   return results;
+}
+
+// Resuelve nombres de hijos desde sus IDs o email del tutor
+export async function resolveChildrenNames(childIds = [], tutorEmail = "") {
+  const names = [];
+  for (const id of childIds) {
+    if (cache.studentNames[id]) {
+      names.push(cache.studentNames[id]);
+      continue;
+    }
+    const snap = await getDoc(doc(db, "students", id));
+    if (snap.exists()) {
+      const name = snap.data().name;
+      cache.studentNames[id] = name;
+      names.push(name);
+    }
+  }
+  // También buscar por email si no tiene childIds
+  if (childIds.length === 0 && tutorEmail) {
+    const snap = await getDocs(query(
+      collection(db, "students"),
+      where("tutorEmail", "==", tutorEmail)
+    ));
+    snap.docs.forEach(d => {
+      const name = d.data().name;
+      cache.studentNames[d.id] = name;
+      names.push(name);
+    });
+  }
+  return names;
 }
 
 export async function createUser(email, password, profileData) {
@@ -99,7 +139,6 @@ export async function getAllStudents() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-// Carga solo los hijos del tutor por sus IDs
 export async function getChildrenByIds(childIds = [], tutorEmail = "") {
   const results = [];
   for (const id of childIds) {
