@@ -11,14 +11,8 @@ import { db, auth } from "./firebase";
 // ─── Caché en memoria ─────────────────────────────────────────────
 const cache = {
   users: null,
-  students: null,
   grades: null,
 };
-
-export function invalidateCache(key) {
-  if (key) cache[key] = null;
-  else { cache.users = null; cache.students = null; cache.grades = null; }
-}
 
 // ─── Usuarios / Perfiles ──────────────────────────────────────────
 export async function getUserProfile(uid) {
@@ -49,7 +43,7 @@ export async function createUser(email, password, profileData) {
     email,
     createdAt: serverTimestamp()
   });
-  cache.users = null; // invalidar caché
+  cache.users = null;
   return cred.user.uid;
 }
 
@@ -63,12 +57,28 @@ export async function deleteUserProfile(uid) {
   cache.users = null;
 }
 
-// ─── Alumnos ──────────────────────────────────────────────────────
-export async function getAllStudents() {
-  if (cache.students) return cache.students;
+// ─── Alumnos (lazy - solo se cargan al buscar) ────────────────────
+export async function searchStudents({ name = "", grade = "" } = {}) {
+  // Filtramos por año directo en Firestore si solo hay filtro de año
+  if (grade && !name) {
+    const snap = await getDocs(query(
+      collection(db, "students"),
+      where("grade", "==", grade),
+      orderBy("name")
+    ));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }
+  // Si hay nombre o ningún filtro, traemos todos y filtramos en memoria
   const snap = await getDocs(query(collection(db, "students"), orderBy("name")));
-  cache.students = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  return cache.students;
+  let results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (name) results = results.filter(s => s.name.toLowerCase().includes(name.toLowerCase()));
+  if (grade) results = results.filter(s => s.grade === grade);
+  return results;
+}
+
+export async function getAllStudents() {
+  const snap = await getDocs(query(collection(db, "students"), orderBy("name")));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
 export async function createStudent(data) {
@@ -76,18 +86,15 @@ export async function createStudent(data) {
     ...data,
     createdAt: serverTimestamp()
   });
-  cache.students = null;
   return ref.id;
 }
 
 export async function updateStudent(id, data) {
   await updateDoc(doc(db, "students", id), data);
-  cache.students = null;
 }
 
 export async function deleteStudent(id) {
   await deleteDoc(doc(db, "students", id));
-  cache.students = null;
 }
 
 // ─── Notas / Evaluaciones ─────────────────────────────────────────
@@ -99,7 +106,6 @@ export async function getAllGrades() {
 }
 
 export async function getGradesByStudent(studentId) {
-  // Usa caché global si está disponible
   if (cache.grades) return cache.grades.filter(g => g.studentId === studentId);
   const snap = await getDocs(query(
     collection(db, "grades"),
@@ -110,7 +116,6 @@ export async function getGradesByStudent(studentId) {
 }
 
 export async function getGradesByTeacher(teacherId) {
-  // Usa caché global si está disponible
   if (cache.grades) return cache.grades.filter(g => g.teacherId === teacherId);
   const snap = await getDocs(query(
     collection(db, "grades"),
