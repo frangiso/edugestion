@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor } from "../components";
-import { getAllTeachers, getAllGrades, getAllObservations, createUser, updateStudent, createStudent, deleteStudent, deleteUserProfile, deleteGrade, deleteObservation, searchStudents, searchParents } from "../db";
+import { getAllTeachers, getAllGrades, searchObservations, createUser, updateStudent, createStudent, deleteStudent, deleteUserProfile, deleteGrade, deleteObservation, searchStudents, searchParents } from "../db";
 
 const GRADES = ["1°","2°","3°","4°","5°","6°"];
 const SUBJECTS = ["Matemática","Tecnología","Lengua y Literatura","Inglés","Lenguaje de las Artes Visuales","Psicología","Geografía","Política y Ciudadanía","Filosofía","Biología","Producción de las Artes Visuales","Educación Física","Artes Visuales y T.I.C.","Química","Educación Artística","Historia","Física","Economía","Formación para la Vida y el Trabajo","Sociología","Formación Ética","E.O.I."];
@@ -9,7 +9,6 @@ export default function AdminScreen({ user, profile, logout }) {
   const [tab, setTab] = useState("overview");
   const [teachers, setTeachers] = useState([]);
   const [grades, setGrades] = useState([]);
-  const [observations, setObservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -17,8 +16,9 @@ export default function AdminScreen({ user, profile, logout }) {
 
   async function loadAll() {
     setLoading(true);
-    const [t, g, o] = await Promise.all([getAllTeachers(), getAllGrades(), getAllObservations()]);
-    setTeachers(t); setGrades(g); setObservations(o);
+    // Observaciones NO se cargan al entrar — son lazy
+    const [t, g] = await Promise.all([getAllTeachers(), getAllGrades()]);
+    setTeachers(t); setGrades(g);
     setLoading(false);
   }
 
@@ -36,12 +36,12 @@ export default function AdminScreen({ user, profile, logout }) {
           <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando datos...</div>
         ) : (
           <div className="fade" key={tab}>
-            {tab === "overview" && <Overview grades={grades} teachers={teachers} observations={observations} />}
+            {tab === "overview" && <Overview grades={grades} teachers={teachers} />}
             {tab === "students" && <StudentsTab setSaving={setSaving} />}
             {tab === "teachers" && <TeachersTab teachers={teachers} setTeachers={setTeachers} setSaving={setSaving} />}
             {tab === "parents" && <ParentsTab setSaving={setSaving} />}
             {tab === "allgrades" && <AllGradesTab grades={grades} setGrades={setGrades} setSaving={setSaving} />}
-            {tab === "allobservations" && <AllObservationsTab observations={observations} setObservations={setObservations} setSaving={setSaving} />}
+            {tab === "allobservations" && <AllObservationsTab setSaving={setSaving} />}
           </div>
         )}
       </div>
@@ -49,12 +49,11 @@ export default function AdminScreen({ user, profile, logout }) {
   );
 }
 
-function Overview({ grades, teachers, observations }) {
+function Overview({ grades, teachers }) {
   const globalAvg = avg(grades.map(g => g.score));
   const cards = [
     { icon:"👨‍🏫", label:"Profesores", value: teachers.length, color:"#065f46" },
     { icon:"📝", label:"Evaluaciones", value: grades.length, color:"#4c1d95" },
-    { icon:"💬", label:"Observaciones", value: observations.length, color:"#7c3aed" },
     { icon:"⭐", label:"Promedio global", value: globalAvg, color:"#92400e" },
   ];
   return (
@@ -313,7 +312,7 @@ function ParentsTab({ setSaving }) {
     setSaving(true);
     try {
       const uid = await createUser(form.email, form.password, { name:form.name, role:"parent", childIds:form.childIds, childrenNames:form.childrenNames });
-      setResults(prev => [...prev, { id:uid, role:"parent", name:form.name, email:form.email, childIds:form.childIds, childrenNames:form.childrenNames }]);
+      setResults(prev => [...prev, { id:uid, name:form.name, email:form.email, childIds:form.childIds, childrenNames:form.childrenNames }]);
       setForm({ name:"", email:"", password:"", childIds:[], childrenNames:[] });
       setSelectedChildren([]); setShowForm(false);
     } catch(e) { alert(e.message); }
@@ -443,35 +442,39 @@ function AllGradesTab({ grades, setGrades, setSaving }) {
   );
 }
 
-// ─── Observaciones del director ───────────────────────────────────
-function AllObservationsTab({ observations, setObservations, setSaving }) {
+// ─── Observaciones lazy ───────────────────────────────────────────
+function AllObservationsTab({ setSaving }) {
   const [studentFilter, setStudentFilter] = useState(null);
   const [teacherFilter, setTeacherFilter] = useState("");
-  const [nameFilter, setNameFilter] = useState("");
+  const [results, setResults] = useState([]);
+  const [searched, setSearched] = useState(false);
+  const [searching, setSearching] = useState(false);
 
-  const filtered = observations
-    .filter(o => !studentFilter || o.studentId === studentFilter.id)
-    .filter(o => !teacherFilter || (o.teacherName||"").toLowerCase().includes(teacherFilter.toLowerCase()))
-    .filter(o => !nameFilter || (o.studentName||"").toLowerCase().includes(nameFilter.toLowerCase()));
+  async function doSearch() {
+    setSearching(true);
+    const r = await searchObservations({
+      studentId: studentFilter?.id || "",
+      teacherName: teacherFilter,
+    });
+    setResults(r); setSearched(true); setSearching(false);
+  }
 
   async function removeObs(id) {
     setSaving(true);
     await deleteObservation(id);
-    setObservations(prev => prev.filter(o => o.id !== id));
+    setResults(prev => prev.filter(o => o.id !== id));
     setSaving(false);
   }
 
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px" }}>
-        <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>Observaciones ({filtered.length})</h2>
-      </div>
+      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 20px" }}>Observaciones</h2>
 
-      {/* Filtros */}
-      <div className="card" style={{ padding:"20px", marginBottom:"20px" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"16px" }}>
+      {/* Filtros de búsqueda */}
+      <div className="card" style={{ padding:"24px", marginBottom:"20px" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"20px", marginBottom:"16px" }}>
           <div>
-            <label>Filtrar por alumno</label>
+            <label>Filtrar por alumno (opcional)</label>
             {studentFilter ? (
               <div style={{ display:"flex", alignItems:"center", gap:"8px", marginTop:"6px" }}>
                 <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{studentFilter.name} ({studentFilter.grade})</span>
@@ -479,25 +482,32 @@ function AllObservationsTab({ observations, setObservations, setSaving }) {
               </div>
             ) : (
               <div style={{ marginTop:"6px" }}>
-                <StudentSearch buttonLabel="Filtrar" onSelect={setStudentFilter} />
+                <StudentSearch buttonLabel="Seleccionar" onSelect={setStudentFilter} />
               </div>
             )}
           </div>
           <div>
-            <label>Filtrar por profesor</label>
+            <label>Filtrar por profesor (opcional)</label>
             <input value={teacherFilter} onChange={e=>setTeacherFilter(e.target.value)} placeholder="🔍 Nombre del profesor..." style={{ marginTop:"6px" }} />
           </div>
         </div>
+        <button className="btn-primary" onClick={doSearch} disabled={searching}>
+          {searching ? "Buscando..." : "🔍 Buscar observaciones"}
+        </button>
+        {!searched && <p style={{ color:"#94a3b8", fontSize:"0.82rem", marginTop:"10px", marginBottom:0 }}>Podés buscar todas las observaciones o filtrar por alumno y/o profesor.</p>}
       </div>
 
-      {filtered.length === 0 ? (
+      {searched && results.length===0 && (
         <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
           <div style={{ fontSize:"3rem", marginBottom:"12px" }}>💬</div>
-          <p>No hay observaciones registradas aún</p>
+          <p>No se encontraron observaciones con esos filtros.</p>
         </div>
-      ) : (
+      )}
+
+      {results.length > 0 && (
         <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
-          {filtered.map(o => (
+          <p style={{ color:"#64748b", fontSize:"0.85rem", margin:"0 0 4px" }}>{results.length} observación(es) encontrada(s)</p>
+          {results.map(o => (
             <div key={o.id} className="card" style={{ padding:"16px 20px", borderLeft:"4px solid #7c3aed" }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"8px" }}>
                 <div>
@@ -508,7 +518,7 @@ function AllObservationsTab({ observations, setObservations, setSaving }) {
                     <span style={{ fontSize:"0.78rem", color:"#94a3b8", marginLeft:"6px" }}>· {o.subjects.join(", ")}</span>
                   )}
                 </div>
-                <div style={{ display:"flex", alignItems:"center", gap:"12px" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:"12px", flexShrink:0 }}>
                   <span style={{ fontSize:"0.78rem", color:"#94a3b8" }}>{o.date}</span>
                   <button className="btn-danger" onClick={()=>removeObs(o.id)}>Eliminar</button>
                 </div>
