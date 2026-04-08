@@ -18,7 +18,10 @@ export default function TeacherScreen({ user, profile, logout }) {
 
   async function loadAll() {
     setLoading(true);
-    const [g, o] = await Promise.all([getGradesByTeacher(user.uid), getObservationsByTeacher(user.uid)]);
+    const [g, o] = await Promise.all([
+      getGradesByTeacher(user.uid),
+      getObservationsByTeacher(user.uid)
+    ]);
     setGrades(g);
     setObservations(o);
     setLoading(false);
@@ -49,7 +52,7 @@ export default function TeacherScreen({ user, profile, logout }) {
 
         {loading ? <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando...</div> : (
           <div className="fade" key={tab}>
-            {tab==="add" && <AddGrade user={user} subject={selectedSubject} grades={grades} setGrades={setGrades} setSaving={setSaving} />}
+            {tab==="add" && <AddGrade user={user} profile={profile} subject={selectedSubject} grades={grades} setGrades={setGrades} setSaving={setSaving} />}
             {tab==="mygrades" && <MyGrades grades={grades} setGrades={setGrades} setSaving={setSaving} />}
             {tab==="observations" && <ObservationsTab user={user} profile={profile} observations={observations} setObservations={setObservations} setSaving={setSaving} />}
             {tab==="ranking" && <Ranking grades={grades} subject={selectedSubject} />}
@@ -60,7 +63,7 @@ export default function TeacherScreen({ user, profile, logout }) {
   );
 }
 
-function AddGrade({ user, subject, grades, setGrades, setSaving }) {
+function AddGrade({ user, profile, subject, grades, setGrades, setSaving }) {
   const [nameQ, setNameQ] = useState("");
   const [gradeQ, setGradeQ] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -82,7 +85,16 @@ function AddGrade({ user, subject, grades, setGrades, setSaving }) {
     const score = parseFloat(form.score);
     if (score < 1 || score > 10) { alert("La nota debe estar entre 1 y 10"); return; }
     setSaving(true);
-    const data = { ...form, score, teacherId: user.uid, teacherName: profile?.name || "", subject, studentId: selectedStudent.id, studentName: selectedStudent.name };
+    const data = {
+      ...form,
+      score,
+      teacherId: user.uid,
+      teacherName: profile.name || "",
+      subject,
+      studentId: selectedStudent.id,
+      studentName: selectedStudent.name,
+      studentGrade: selectedStudent.grade || "",
+    };
     const id = await createGrade(data);
     setGrades(prev => [{ id, ...data }, ...prev]);
     setForm({ score:"", type:"Examen", trimester:1, date:new Date().toISOString().split("T")[0], note:"" });
@@ -149,7 +161,7 @@ function AddGrade({ user, subject, grades, setGrades, setSaving }) {
               </select>
             </div>
             <div><label>Fecha</label><input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} /></div>
-            <div style={{ gridColumn:"1/-1" }}><label>Observación (opcional)</label><input value={form.note} onChange={e=>setForm({...form,note:e.target.value})} placeholder="Comentario para el tutor..." /></div>
+            <div style={{ gridColumn:"1/-1" }}><label>Observación sobre la nota (opcional)</label><input value={form.note} onChange={e=>setForm({...form,note:e.target.value})} placeholder="Comentario para el tutor..." /></div>
           </div>
           <button className="btn-primary" onClick={submit} style={{ marginTop:"20px", padding:"12px 32px", fontSize:"1rem" }}>Guardar evaluación →</button>
         </div>
@@ -161,7 +173,9 @@ function AddGrade({ user, subject, grades, setGrades, setSaving }) {
 function MyGrades({ grades, setGrades, setSaving }) {
   const [trim, setTrim] = useState(0);
   const [nameFilter, setNameFilter] = useState("");
-  const filtered = grades.filter(g => trim===0 || g.trimester===trim).filter(g => !nameFilter || (g.studentName||"").toLowerCase().includes(nameFilter.toLowerCase()));
+  const filtered = grades
+    .filter(g => trim===0 || g.trimester===trim)
+    .filter(g => !nameFilter || (g.studentName||"").toLowerCase().includes(nameFilter.toLowerCase()));
 
   async function removeGrade(id) {
     setSaving(true);
@@ -202,7 +216,6 @@ function MyGrades({ grades, setGrades, setSaving }) {
   );
 }
 
-// ─── Observaciones ────────────────────────────────────────────────
 function ObservationsTab({ user, profile, observations, setObservations, setSaving }) {
   const [nameQ, setNameQ] = useState("");
   const [gradeQ, setGradeQ] = useState("");
@@ -229,7 +242,7 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
     const data = {
       studentId: selectedStudent.id,
       studentName: selectedStudent.name,
-      studentGrade: selectedStudent.grade,
+      studentGrade: selectedStudent.grade || "",
       teacherId: user.uid,
       teacherName: profile.name || "",
       subjects: subjects,
@@ -258,11 +271,9 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
       <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 20px" }}>Observaciones</h2>
       {success && <div className="fade" style={{ background:"#d1fae5", border:"1px solid #6ee7b7", borderRadius:"10px", padding:"12px 16px", marginBottom:"20px", color:"#065f46", fontWeight:600 }}>✅ Observación guardada</div>}
 
-      {/* Formulario nueva observación */}
       <div className="card" style={{ padding:"24px", marginBottom:"24px", border:"2px solid #e0e7ff" }}>
         <h3 style={{ margin:"0 0 16px", color:"#1e3a5f", fontSize:"1rem" }}>Nueva observación</h3>
 
-        {/* Buscador alumno */}
         {selectedStudent ? (
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 16px", background:"#dbeafe", borderRadius:"10px", marginBottom:"16px" }}>
             <div>
@@ -297,7 +308,7 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
 
         {selectedStudent && (
           <>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:"16px", marginBottom:"16px" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:"16px", alignItems:"start", marginBottom:"16px" }}>
               <div>
                 <label>Observación</label>
                 <textarea
@@ -305,12 +316,12 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
                   onChange={e=>setForm({...form,text:e.target.value})}
                   placeholder="Ej: El alumno no trabajó durante la clase, se mostró desatento..."
                   rows={3}
-                  style={{ width:"100%", border:"1.5px solid #cbd5e1", borderRadius:"10px", padding:"10px 14px", fontSize:"0.9rem", fontFamily:"inherit", resize:"vertical" }}
+                  style={{ width:"100%", border:"1.5px solid #cbd5e1", borderRadius:"10px", padding:"10px 14px", fontSize:"0.9rem", fontFamily:"inherit", resize:"vertical", marginTop:"4px" }}
                 />
               </div>
               <div>
                 <label>Fecha</label>
-                <input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} style={{ width:"160px" }} />
+                <input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} style={{ marginTop:"4px" }} />
               </div>
             </div>
             <button className="btn-primary" onClick={submit}>Guardar observación →</button>
@@ -318,11 +329,10 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
         )}
       </div>
 
-      {/* Listado de observaciones propias */}
       <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 12px" }}>Mis observaciones ({filtered.length})</h3>
       <input value={nameFilter} onChange={e=>setNameFilter(e.target.value)} placeholder="🔍 Filtrar por nombre de alumno..." style={{ width:"100%", marginBottom:"16px" }} />
 
-      {filtered.length === 0 ? (
+      {filtered.length===0 ? (
         <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
           <div style={{ fontSize:"3rem", marginBottom:"12px" }}>💬</div>
           <p>No hay observaciones cargadas aún</p>
@@ -373,7 +383,7 @@ function Ranking({ grades, subject }) {
           {GRADES.map(g=><option key={g} value={g}>{g}</option>)}
         </select>
       </div>
-      {students.length === 0 ? (
+      {students.length===0 ? (
         <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}><p>No hay evaluaciones para esta materia aún.</p></div>
       ) : (
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))", gap:"16px" }}>
@@ -383,7 +393,10 @@ function Ranking({ grades, subject }) {
             return (
               <div key={s.id} className="card" style={{ padding:"20px", borderTop:`3px solid ${color}` }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-                  <div style={{ fontWeight:700, color:"#1e293b" }}>{s.name}</div>
+                  <div>
+                    <div style={{ fontWeight:700, color:"#1e293b" }}>{s.name}</div>
+                    {s.grade && <span className="badge" style={{ background:"#dbeafe", color:"#1e40af", marginTop:"4px" }}>{s.grade}</span>}
+                  </div>
                   <div style={{ textAlign:"right" }}>
                     <div style={{ fontSize:"1.8rem", fontWeight:800, color, fontFamily:"'Playfair Display',serif" }}>{sa}</div>
                     <div style={{ fontSize:"0.72rem", color:"#94a3b8" }}>{s.scores.length} eval.</div>
