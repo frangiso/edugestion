@@ -38,9 +38,7 @@ export async function searchParents(searchText = "") {
   results = await Promise.all(results.map(async p => {
     if (p.childrenNames && p.childrenNames.length > 0) return p;
     const names = await resolveChildrenNames(p.childIds || [], p.email);
-    if (names.length > 0) {
-      await updateDoc(doc(db, "users", p.id), { childrenNames: names });
-    }
+    if (names.length > 0) await updateDoc(doc(db, "users", p.id), { childrenNames: names });
     return { ...p, childrenNames: names };
   }));
   return results;
@@ -154,15 +152,8 @@ export async function deleteGrade(id) {
 }
 
 // ─── Observaciones ────────────────────────────────────────────────
-export async function getObservationsByStudent(studentId) {
-  const snap = await getDocs(query(
-    collection(db, "observations"),
-    where("studentId", "==", studentId),
-    orderBy("date", "desc")
-  ));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-}
 
+// Para el profesor — carga solo las suyas (pocas)
 export async function getObservationsByTeacher(teacherId) {
   const snap = await getDocs(query(
     collection(db, "observations"),
@@ -172,9 +163,31 @@ export async function getObservationsByTeacher(teacherId) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export async function getAllObservations() {
-  const snap = await getDocs(query(collection(db, "observations"), orderBy("date", "desc")));
+// Para el tutor — carga solo las de sus hijos (pocas)
+export async function getObservationsByStudent(studentId) {
+  const snap = await getDocs(query(
+    collection(db, "observations"),
+    where("studentId", "==", studentId),
+    orderBy("date", "desc")
+  ));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// Para el director — búsqueda lazy por alumno o profesor
+export async function searchObservations({ studentId = "", teacherName = "" } = {}) {
+  let q;
+  if (studentId) {
+    q = query(collection(db, "observations"), where("studentId", "==", studentId), orderBy("date", "desc"));
+  } else {
+    q = query(collection(db, "observations"), orderBy("date", "desc"));
+  }
+  const snap = await getDocs(q);
+  let results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (teacherName) {
+    const t = teacherName.toLowerCase();
+    results = results.filter(o => (o.teacherName||"").toLowerCase().includes(t));
+  }
+  return results;
 }
 
 export async function createObservation(data) {
