@@ -22,49 +22,158 @@ export default function LoginScreen() {
   }
 
   return (
-    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"linear-gradient(160deg,#1e3a5f 0%,#2d5282 50%,#1a365d 100%)", padding:"20px", fontFamily:"'Source Sans 3', sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;800&family=Source+Sans+3:wght@400;600&display=swap'); * { box-sizing: border-box; }`}</style>
-      <div style={{ width:"100%", maxWidth:"420px" }}>
-        <div style={{ textAlign:"center", marginBottom:"32px" }}>
-          <div style={{ margin:"0 auto 16px" }}>
+    <div style={{
+      minHeight:"100vh",
+      display:"flex",
+      alignItems:"center",
+      justifyContent:"center",
+      background:"linear-gradient(135deg, #2e8b57 0%, #3cb371 20%, #48d1cc 40%, #00bcd4 55%, #e91e8c 75%, #ff6b35 90%, #2e8b57 100%)",
+      backgroundSize:"400% 400%",
+      padding:"20px",
+      fontFamily:"'Source Sans 3', sans-serif",
+      position:"relative",
+      overflow:"hidden"
+    }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;800&family=Source+Sans+3:wght@400;600&display=swap');
+        * { box-sizing: border-box; }
+        @keyframes gradientShift {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        .login-bg {
+          animation: gradientShift 12s ease infinite;
+          background: linear-gradient(135deg, #2e8b57 0%, #3cb371 15%, #48d1cc 30%, #00bcd4 45%, #1a6b9a 60%, #e91e8c 75%, #ff6b35 88%, #2e8b57 100%);
+          background-size: 400% 400%;
+        }
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-8px); }
+        }
+        .logo-float { animation: float 4s ease-in-out infinite; }
+      `}</style>
+
+      {/* Fondo animado con colores del logo */}
+      <div className="login-bg" style={{ position:"absolute", inset:0, zIndex:0 }} />
+
+      {/* Círculos decorativos de fondo */}
+      <div style={{ position:"absolute", top:"-80px", left:"-80px", width:"300px", height:"300px", borderRadius:"50%", background:"rgba(255,255,255,0.06)", zIndex:1 }} />
+      <div style={{ position:"absolute", bottom:"-60px", right:"-60px", width:"250px", height:"250px", borderRadius:"50%", background:"rgba(255,255,255,0.06)", zIndex:1 }} />
+      <div style={{ position:"absolute", top:"40%", left:"-40px", width:"150px", height:"150px", borderRadius:"50%", background:"rgba(255,255,255,0.04)", zIndex:1 }} />
+
+      <div style={{ width:"100%", maxWidth:"420px", position:"relative", zIndex:2 }}>
+        {/* Logo y título */}
+        <div style={{ textAlign:"center", marginBottom:"28px" }}>
+          <div className="logo-float" style={{ margin:"0 auto 16px" }}>
             <img
               src={LOGO}
               alt="Escuela Generativa Prof. Guillermo Viscó"
-              style={{ width:"110px", height:"110px", borderRadius:"50%", objectFit:"cover", border:"3px solid rgba(255,255,255,0.4)", boxShadow:"0 4px 20px rgba(0,0,0,0.3)" }}
+              style={{
+                width:"120px",
+                height:"120px",
+                borderRadius:"50%",
+                objectFit:"cover",
+                border:"4px solid rgba(255,255,255,0.9)",
+                boxShadow:"0 8px 32px rgba(0,0,0,0.3), 0 0 0 8px rgba(255,255,255,0.1)"
+              }}
             />
           </div>
-          <h1 style={{ fontFamily:"'Playfair Display', serif", color:"white", fontSize:"2rem", margin:0, fontWeight:800 }}>EduGestión</h1>
-          <p style={{ color:"rgba(255,255,255,0.6)", margin:"4px 0 0", fontSize:"0.85rem", letterSpacing:"2px", textTransform:"uppercase" }}>Sistema de Gestión Escolar</p>
+          <h1 style={{
+            fontFamily:"'Playfair Display', serif",
+            color:"white",
+            fontSize:"1.6rem",
+            margin:"0 0 4px",
+            fontWeight:800,
+            textShadow:"0 2px 8px rgba(0,0,0,0.3)",
+            lineHeight:1.2
+          }}>
+            Esc. Generativa
+          </h1>
+          <p style={{
+            color:"rgba(255,255,255,0.95)",
+            margin:"2px 0 0",
+            fontSize:"0.88rem",
+            fontWeight:600,
+            textShadow:"0 1px 4px rgba(0,0,0,0.3)",
+            letterSpacing:"0.5px"
+          }}>
+            Profesor Guillermo Viscó
+          </p>
+          <p style={{
+            color:"rgba(255,255,255,0.7)",
+            margin:"6px 0 0",
+            fontSize:"0.72rem",
+            letterSpacing:"2px",
+            textTransform:"uppercase"
+          }}>
+            Sistema de Gestión Escolar
+          </p>
         </div>
-        <div style={{ background:"white", borderRadius:"16px", padding:"32px", boxShadow:"0 8px 32px rgba(0,0,0,0.2)" }}>
+
+        {/* Card de login */}
+        <div style={{
+          background:"rgba(255,255,255,0.95)",
+          borderRadius:"20px",
+          padding:"32px",
+          boxShadow:"0 16px 48px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.3)"
+        }}>
           <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
             <div>
-              <label style={{ fontSize:"0.82rem", fontWeight:600, color:"#475569", display:"block", marginBottom:"4px", textTransform:"uppercase", letterSpacing:"0.5px" }}>Correo electrónico</label>
+              <label style={{ fontSize:"0.82rem", fontWeight:600, color:"#475569", display:"block", marginBottom:"4px", textTransform:"uppercase", letterSpacing:"0.5px" }}>
+                Correo electrónico
+              </label>
               <input
                 type="email" value={email} onChange={e=>setEmail(e.target.value)}
                 placeholder="usuario@escuela.edu"
-                style={{ border:"1.5px solid #cbd5e1", borderRadius:"10px", padding:"10px 14px", width:"100%", fontSize:"0.9rem", outline:"none", background:"#f8fafc" }}
+                style={{ border:"1.5px solid #cbd5e1", borderRadius:"10px", padding:"10px 14px", width:"100%", fontSize:"0.9rem", outline:"none", background:"#f8fafc", transition:"border 0.2s" }}
+                onFocus={e=>e.target.style.borderColor="#2e8b57"}
+                onBlur={e=>e.target.style.borderColor="#cbd5e1"}
               />
             </div>
             <div>
-              <label style={{ fontSize:"0.82rem", fontWeight:600, color:"#475569", display:"block", marginBottom:"4px", textTransform:"uppercase", letterSpacing:"0.5px" }}>Contraseña</label>
+              <label style={{ fontSize:"0.82rem", fontWeight:600, color:"#475569", display:"block", marginBottom:"4px", textTransform:"uppercase", letterSpacing:"0.5px" }}>
+                Contraseña
+              </label>
               <input
                 type="password" value={pass} onChange={e=>setPass(e.target.value)}
                 onKeyDown={e=>e.key==="Enter"&&handleSubmit()}
                 placeholder="••••••••"
-                style={{ border:"1.5px solid #cbd5e1", borderRadius:"10px", padding:"10px 14px", width:"100%", fontSize:"0.9rem", outline:"none", background:"#f8fafc" }}
+                style={{ border:"1.5px solid #cbd5e1", borderRadius:"10px", padding:"10px 14px", width:"100%", fontSize:"0.9rem", outline:"none", background:"#f8fafc", transition:"border 0.2s" }}
+                onFocus={e=>e.target.style.borderColor="#2e8b57"}
+                onBlur={e=>e.target.style.borderColor="#cbd5e1"}
               />
             </div>
-            {err && <p style={{ color:"#dc2626", fontSize:"0.85rem", margin:0, padding:"8px 12px", background:"#fee2e2", borderRadius:"8px" }}>⚠ {err}</p>}
+            {err && (
+              <p style={{ color:"#dc2626", fontSize:"0.85rem", margin:0, padding:"8px 12px", background:"#fee2e2", borderRadius:"8px" }}>
+                ⚠ {err}
+              </p>
+            )}
             <button
               onClick={handleSubmit} disabled={loading}
-              style={{ background:"#1e3a5f", color:"white", border:"none", borderRadius:"10px", padding:"12px", fontSize:"1rem", cursor:"pointer", fontWeight:600, opacity:loading?0.7:1 }}
+              style={{
+                background:"linear-gradient(135deg, #2e8b57, #00bcd4)",
+                color:"white",
+                border:"none",
+                borderRadius:"10px",
+                padding:"13px",
+                fontSize:"1rem",
+                cursor:"pointer",
+                fontWeight:700,
+                opacity:loading?0.7:1,
+                boxShadow:"0 4px 16px rgba(46,139,87,0.4)",
+                transition:"transform 0.1s, opacity 0.2s",
+                letterSpacing:"0.5px"
+              }}
             >
               {loading ? "Ingresando..." : "Ingresar →"}
             </button>
           </div>
         </div>
-        <p style={{ color:"rgba(255,255,255,0.4)", textAlign:"center", fontSize:"0.75rem", marginTop:"16px" }}>Escuela Generativa · Prof. Guillermo Viscó</p>
+
+        <p style={{ color:"rgba(255,255,255,0.5)", textAlign:"center", fontSize:"0.72rem", marginTop:"16px" }}>
+          Escuela Generativa · Prof. Guillermo Viscó · 2025
+        </p>
       </div>
     </div>
   );
