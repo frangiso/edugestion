@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor } from "../components";
 import { searchStudents, getGradesByTeacherPaged, getMoreGradesByTeacher, getGradesByStudent, createGrade, deleteGrade, getObservationsByTeacher, createObservation, deleteObservation } from "../db";
 
@@ -6,37 +6,10 @@ const GRADES = ["1°","2°","3°","4°","5°","6°"];
 
 export default function TeacherScreen({ user, profile, logout }) {
   const [tab, setTab] = useState("add");
-  const [grades, setGrades] = useState([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [observations, setObservations] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const subjects = profile.subjects || (profile.subject ? [profile.subject] : []);
   const [selectedSubject, setSelectedSubject] = useState(subjects[0] || "");
-
-  useEffect(() => { loadAll(); }, []);
-
-  async function loadAll() {
-    setLoading(true);
-    const [{ grades: g, hasMore: hm }, o] = await Promise.all([
-      getGradesByTeacherPaged(user.uid),
-      getObservationsByTeacher(user.uid)
-    ]);
-    setGrades(g);
-    setHasMore(hm);
-    setObservations(o);
-    setLoading(false);
-  }
-
-  async function loadMore() {
-    setLoadingMore(true);
-    const { grades: g, hasMore: hm } = await getMoreGradesByTeacher(user.uid);
-    setGrades(g);
-    setHasMore(hm);
-    setLoadingMore(false);
-  }
 
   return (
     <div style={{ minHeight:"100vh", background:"#f0f4f8", fontFamily:"'Source Sans 3', sans-serif" }}>
@@ -61,36 +34,64 @@ export default function TeacherScreen({ user, profile, logout }) {
           ))}
         </div>
 
-        {loading ? <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando...</div> : (
-          <div className="fade" key={tab}>
-            {tab==="add" && <AddGrade user={user} profile={profile} subject={selectedSubject} grades={grades} setGrades={setGrades} setSaving={setSaving} />}
-            {tab==="mygrades" && <MyGrades grades={grades} hasMore={hasMore} loadingMore={loadingMore} loadMore={loadMore} setGrades={setGrades} setSaving={setSaving} />}
-            {tab==="student" && <StudentView />}
-            {tab==="observations" && <ObservationsTab user={user} profile={profile} observations={observations} setObservations={setObservations} setSaving={setSaving} />}
-            {tab==="ranking" && <Ranking grades={grades} hasMore={hasMore} subject={selectedSubject} />}
-          </div>
-        )}
+        <div className="fade" key={tab}>
+          {tab==="add" && <AddGrade user={user} profile={profile} subject={selectedSubject} setSaving={setSaving} />}
+          {tab==="mygrades" && <MyGrades user={user} setSaving={setSaving} />}
+          {tab==="student" && <StudentView />}
+          {tab==="observations" && <ObservationsTab user={user} profile={profile} setSaving={setSaving} />}
+          {tab==="ranking" && <Ranking user={user} subject={selectedSubject} />}
+        </div>
       </div>
     </div>
   );
 }
 
-function AddGrade({ user, profile, subject, grades, setGrades, setSaving }) {
+// ─── Buscador de alumnos reutilizable ─────────────────────────────
+function AlumnoSearch({ onSelect, label = "Buscar alumno" }) {
   const [nameQ, setNameQ] = useState("");
   const [gradeQ, setGradeQ] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
+  const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
-  const [selectedStudent, setSelectedStudent] = useState(null);
-  const [form, setForm] = useState({ score:"", type:"Examen", trimester:1, date:new Date().toISOString().split("T")[0], note:"" });
-  const [success, setSuccess] = useState(false);
+  const [searched, setSearched] = useState(false);
 
   async function doSearch() {
     if (!nameQ && !gradeQ) return;
     setSearching(true);
     const r = await searchStudents({ name: nameQ, grade: gradeQ });
-    setSearchResults(r);
-    setSearching(false);
+    setResults(r); setSearched(true); setSearching(false);
   }
+
+  return (
+    <div>
+      <label>{label}</label>
+      <div style={{ display:"flex", gap:"10px", marginTop:"6px", flexWrap:"wrap" }}>
+        <input value={nameQ} onChange={e=>setNameQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch()} placeholder="🔍 Nombre..." style={{ flex:1, minWidth:"150px" }} />
+        <select value={gradeQ} onChange={e=>setGradeQ(e.target.value)} style={{ width:"110px" }}>
+          <option value="">Todos los años</option>
+          {GRADES.map(g=><option key={g} value={g}>{g}</option>)}
+        </select>
+        <button className="btn-primary" onClick={doSearch} disabled={searching}>{searching?"Buscando...":"Buscar"}</button>
+      </div>
+      {searched && results.length===0 && <p style={{ color:"#94a3b8", fontSize:"0.85rem", marginTop:"8px" }}>No se encontraron alumnos.</p>}
+      {results.length > 0 && (
+        <div style={{ marginTop:"8px", display:"flex", flexDirection:"column", gap:"6px", maxHeight:"220px", overflowY:"auto" }}>
+          {results.map(s => (
+            <div key={s.id} onClick={()=>{ onSelect(s); setResults([]); setNameQ(""); setGradeQ(""); setSearched(false); }} style={{ padding:"10px 14px", background:"#f8fafc", borderRadius:"8px", border:"1px solid #e2e8f0", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span style={{ fontWeight:600, color:"#1e293b" }}>{s.name}</span>
+              <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{s.grade}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Cargar nota ──────────────────────────────────────────────────
+function AddGrade({ user, profile, subject, setSaving }) {
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [form, setForm] = useState({ score:"", type:"Examen", trimester:1, date:new Date().toISOString().split("T")[0], note:"" });
+  const [success, setSuccess] = useState(false);
 
   async function submit() {
     if (!selectedStudent || !form.score) return;
@@ -106,10 +107,9 @@ function AddGrade({ user, profile, subject, grades, setGrades, setSaving }) {
       studentName: selectedStudent.name,
       studentGrade: selectedStudent.grade || "",
     };
-    const id = await createGrade(data);
-    setGrades(prev => [{ id, ...data }, ...prev]);
+    await createGrade(data);
     setForm({ score:"", type:"Examen", trimester:1, date:new Date().toISOString().split("T")[0], note:"" });
-    setSelectedStudent(null); setSearchResults([]); setNameQ(""); setGradeQ("");
+    setSelectedStudent(null);
     setSuccess(true); setTimeout(()=>setSuccess(false), 2500);
     setSaving(false);
   }
@@ -128,29 +128,10 @@ function AddGrade({ user, profile, subject, grades, setGrades, setSaving }) {
               <span style={{ fontWeight:700, color:"#1e293b" }}>{selectedStudent.name}</span>
               <span className="badge" style={{ background:"white", color:"#1e40af", marginLeft:"8px" }}>{selectedStudent.grade}</span>
             </div>
-            <button onClick={()=>{ setSelectedStudent(null); setSearchResults([]); }} style={{ fontSize:"0.8rem", color:"#dc2626", background:"none", border:"none", cursor:"pointer" }}>✕ Cambiar</button>
+            <button onClick={()=>setSelectedStudent(null)} style={{ fontSize:"0.8rem", color:"#dc2626", background:"none", border:"none", cursor:"pointer" }}>✕ Cambiar</button>
           </div>
         ) : (
-          <>
-            <div style={{ display:"flex", gap:"10px", marginBottom:"10px", flexWrap:"wrap" }}>
-              <input value={nameQ} onChange={e=>setNameQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch()} placeholder="🔍 Nombre del alumno..." style={{ flex:1, minWidth:"160px" }} />
-              <select value={gradeQ} onChange={e=>setGradeQ(e.target.value)} style={{ width:"120px" }}>
-                <option value="">Todos los años</option>
-                {GRADES.map(g=><option key={g} value={g}>{g}</option>)}
-              </select>
-              <button className="btn-primary" onClick={doSearch} disabled={searching}>{searching?"Buscando...":"Buscar"}</button>
-            </div>
-            {searchResults.length > 0 && (
-              <div style={{ display:"flex", flexDirection:"column", gap:"6px", maxHeight:"200px", overflowY:"auto" }}>
-                {searchResults.map(s => (
-                  <div key={s.id} onClick={()=>setSelectedStudent(s)} style={{ padding:"10px 14px", background:"#f8fafc", borderRadius:"8px", border:"1px solid #e2e8f0", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                    <span style={{ fontWeight:600 }}>{s.name}</span>
-                    <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{s.grade}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
+          <AlumnoSearch onSelect={setSelectedStudent} />
         )}
       </div>
 
@@ -181,118 +162,124 @@ function AddGrade({ user, profile, subject, grades, setGrades, setSaving }) {
   );
 }
 
-function MyGrades({ grades, hasMore, loadingMore, loadMore, setGrades, setSaving }) {
-  const [trim, setTrim] = useState(0);
+// ─── Mis evaluaciones (lazy con paginación) ───────────────────────
+function MyGrades({ user, setSaving }) {
+  const [grades, setGrades] = useState([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [nameFilter, setNameFilter] = useState("");
+  const [trim, setTrim] = useState(0);
+
+  async function cargar() {
+    setLoading(true);
+    const { grades: g, hasMore: hm } = await getGradesByTeacherPaged(user.uid);
+    setGrades(g); setHasMore(hm); setLoaded(true); setLoading(false);
+  }
+
+  async function loadMore() {
+    setLoadingMore(true);
+    const { grades: g, hasMore: hm } = await getMoreGradesByTeacher(user.uid);
+    setGrades(g); setHasMore(hm); setLoadingMore(false);
+  }
+
+  async function removeGrade(id) {
+    setSaving(true);
+    await deleteGrade(id);
+    setGrades(prev => prev.filter(g => g.id !== id));
+    setSaving(false);
+  }
 
   const filtered = grades
     .filter(g => trim===0 || g.trimester===trim)
     .filter(g => !nameFilter || (g.studentName||"").toLowerCase().includes(nameFilter.toLowerCase()));
 
-  // Promedios por trimestre — calculados sobre las notas ya cargadas
   const trimAvgs = [1,2,3].map(t => {
     const tg = grades.filter(g => g.trimester === t);
     return { t, avg: avg(tg.map(g=>g.score)), count: tg.length };
   });
 
-  async function removeGrade(id) {
-    setSaving(true);
-    await deleteGrade(id);
-    setGrades(prev=>prev.filter(g=>g.id!==id));
-    setSaving(false);
-  }
-
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" }}>
-        <div>
-          <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 2px" }}>Mis evaluaciones ({grades.length}{hasMore?"+":""})</h2>
-          {hasMore && <span style={{ fontSize:"0.75rem", color:"#94a3b8" }}>Mostrando las más recientes</span>}
-        </div>
-        <div style={{ display:"flex", gap:"6px" }}>
-          {[["Todos",0],...trimNames.map((n,i)=>[n,i+1])].map(([l,v])=>(
-            <button key={v} onClick={()=>setTrim(v)} style={{ padding:"5px 12px", borderRadius:"20px", background:trim===v?"#1e3a5f":"#f1f5f9", color:trim===v?"white":"#64748b", border:"none", cursor:"pointer", fontSize:"0.78rem", fontWeight:600 }}>{l}</button>
-          ))}
-        </div>
-      </div>
+      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 20px" }}>Mis evaluaciones</h2>
 
-      {/* Promedios por trimestre */}
-      <div className="card" style={{ padding:"16px 20px", marginBottom:"16px" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"10px" }}>
-          {trimAvgs.map(({ t, avg: ta, count }) => (
-            <div key={t} style={{ textAlign:"center", padding:"10px", background:"#f8fafc", borderRadius:"10px", border:`2px solid ${ta==="–"?"#e2e8f0":scoreColor(parseFloat(ta))}` }}>
-              <div style={{ fontSize:"0.72rem", color:"#64748b", fontWeight:600, textTransform:"uppercase" }}>{trimNames[t-1]}</div>
-              <div style={{ fontSize:"1.6rem", fontWeight:800, color: ta==="–"?"#94a3b8":scoreColor(parseFloat(ta)), fontFamily:"'Playfair Display',serif" }}>{ta}</div>
-              <div style={{ fontSize:"0.7rem", color:"#94a3b8" }}>{count} eval.</div>
-            </div>
-          ))}
-        </div>
-        {hasMore && (
-          <p style={{ margin:"10px 0 0", fontSize:"0.75rem", color:"#94a3b8", textAlign:"center" }}>
-            ⚠️ Los promedios se calculan sobre las evaluaciones cargadas hasta ahora
-          </p>
-        )}
-      </div>
-
-      <input value={nameFilter} onChange={e=>setNameFilter(e.target.value)} placeholder="🔍 Filtrar por nombre de alumno..." style={{ width:"100%", marginBottom:"16px" }} />
-
-      {filtered.length===0 ? (
-        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}><div style={{ fontSize:"3rem", marginBottom:"12px" }}>📋</div><p>No hay evaluaciones aún</p></div>
-      ) : (
-        <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
-          {filtered.map(g => (
-            <div key={g.id} className="card" style={{ padding:"16px 20px", display:"flex", alignItems:"center", gap:"16px" }}>
-              <div style={{ width:"44px", height:"44px", borderRadius:"50%", background:scoreColor(g.score), display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:800, fontSize:"1.1rem", flexShrink:0 }}>{g.score}</div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontWeight:700, color:"#1e293b" }}>
-                  {g.studentName||"–"}
-                  {g.studentGrade && <span className="badge" style={{ background:"#dbeafe", color:"#1e40af", marginLeft:"6px" }}>{g.studentGrade}</span>}
-                </div>
-                <div style={{ fontSize:"0.8rem", color:"#64748b" }}>{g.subject} · {g.type} · {trimNames[g.trimester-1]} · {g.date}</div>
-                {g.note && <div style={{ fontSize:"0.8rem", color:"#7c3aed", marginTop:"2px" }}>💬 {g.note}</div>}
-              </div>
-              <button className="btn-danger" onClick={()=>removeGrade(g.id)}>Eliminar</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Botón cargar más */}
-      {hasMore && (
-        <div style={{ textAlign:"center", marginTop:"20px" }}>
-          <button
-            onClick={loadMore}
-            disabled={loadingMore}
-            style={{ padding:"10px 28px", borderRadius:"10px", border:"2px solid #1e3a5f", background:"white", color:"#1e3a5f", cursor:"pointer", fontWeight:600, fontSize:"0.9rem" }}
-          >
-            {loadingMore ? "Cargando..." : "⬇ Cargar más evaluaciones"}
+      {!loaded ? (
+        <div className="card" style={{ padding:"48px", textAlign:"center" }}>
+          <div style={{ fontSize:"3rem", marginBottom:"12px" }}>📋</div>
+          <p style={{ color:"#64748b", marginBottom:"20px" }}>Presioná el botón para cargar tus evaluaciones</p>
+          <button className="btn-primary" onClick={cargar} disabled={loading} style={{ padding:"12px 28px", fontSize:"1rem" }}>
+            {loading ? "Cargando..." : "🔍 Cargar mis evaluaciones"}
           </button>
         </div>
+      ) : (
+        <>
+          {/* Promedios por trimestre */}
+          <div className="card" style={{ padding:"16px 20px", marginBottom:"16px" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"10px" }}>
+              {trimAvgs.map(({ t, avg: ta, count }) => (
+                <div key={t} style={{ textAlign:"center", padding:"10px", background:"#f8fafc", borderRadius:"10px", border:`2px solid ${ta==="–"?"#e2e8f0":scoreColor(parseFloat(ta))}` }}>
+                  <div style={{ fontSize:"0.72rem", color:"#64748b", fontWeight:600, textTransform:"uppercase" }}>{trimNames[t-1]}</div>
+                  <div style={{ fontSize:"1.6rem", fontWeight:800, color: ta==="–"?"#94a3b8":scoreColor(parseFloat(ta)), fontFamily:"'Playfair Display',serif" }}>{ta}</div>
+                  <div style={{ fontSize:"0.7rem", color:"#94a3b8" }}>{count} eval.</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Filtros */}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"12px", flexWrap:"wrap", gap:"10px" }}>
+            <span style={{ color:"#64748b", fontSize:"0.85rem" }}>{grades.length}{hasMore?"+":""} evaluaciones cargadas</span>
+            <div style={{ display:"flex", gap:"6px" }}>
+              {[["Todos",0],...trimNames.map((n,i)=>[n,i+1])].map(([l,v])=>(
+                <button key={v} onClick={()=>setTrim(v)} style={{ padding:"5px 12px", borderRadius:"20px", background:trim===v?"#1e3a5f":"#f1f5f9", color:trim===v?"white":"#64748b", border:"none", cursor:"pointer", fontSize:"0.78rem", fontWeight:600 }}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <input value={nameFilter} onChange={e=>setNameFilter(e.target.value)} placeholder="🔍 Filtrar por nombre de alumno..." style={{ width:"100%", marginBottom:"16px" }} />
+
+          {filtered.length===0 ? (
+            <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}><p>No hay evaluaciones con ese filtro.</p></div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
+              {filtered.map(g => (
+                <div key={g.id} className="card" style={{ padding:"16px 20px", display:"flex", alignItems:"center", gap:"16px" }}>
+                  <div style={{ width:"44px", height:"44px", borderRadius:"50%", background:scoreColor(g.score), display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:800, fontSize:"1.1rem", flexShrink:0 }}>{g.score}</div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontWeight:700, color:"#1e293b" }}>
+                      {g.studentName||"–"}
+                      {g.studentGrade && <span className="badge" style={{ background:"#dbeafe", color:"#1e40af", marginLeft:"6px" }}>{g.studentGrade}</span>}
+                    </div>
+                    <div style={{ fontSize:"0.8rem", color:"#64748b" }}>{g.subject} · {g.type} · {trimNames[g.trimester-1]} · {g.date}</div>
+                    {g.note && <div style={{ fontSize:"0.8rem", color:"#7c3aed", marginTop:"2px" }}>💬 {g.note}</div>}
+                  </div>
+                  <button className="btn-danger" onClick={()=>removeGrade(g.id)}>Eliminar</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {hasMore && (
+            <div style={{ textAlign:"center", marginTop:"20px" }}>
+              <button onClick={loadMore} disabled={loadingMore} style={{ padding:"10px 28px", borderRadius:"10px", border:"2px solid #1e3a5f", background:"white", color:"#1e3a5f", cursor:"pointer", fontWeight:600, fontSize:"0.9rem" }}>
+                {loadingMore ? "Cargando..." : "⬇ Cargar más evaluaciones"}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 }
 
+// ─── Ver alumno (lazy) ────────────────────────────────────────────
 function StudentView() {
-  const [nameQ, setNameQ] = useState("");
-  const [gradeQ, setGradeQ] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [searching, setSearching] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [studentGrades, setStudentGrades] = useState([]);
   const [loadingGrades, setLoadingGrades] = useState(false);
 
-  async function doSearch() {
-    if (!nameQ && !gradeQ) return;
-    setSearching(true);
-    const r = await searchStudents({ name: nameQ, grade: gradeQ });
-    setSearchResults(r);
-    setSearching(false);
-  }
-
   async function selectStudent(s) {
     setSelectedStudent(s);
-    setSearchResults([]);
     setLoadingGrades(true);
     const g = await getGradesByStudent(s.id);
     setStudentGrades(g);
@@ -310,26 +297,10 @@ function StudentView() {
   return (
     <div>
       <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 20px" }}>Ver alumno</h2>
+
       {!selectedStudent ? (
         <div className="card" style={{ padding:"24px" }}>
-          <div style={{ display:"flex", gap:"10px", marginBottom:"10px", flexWrap:"wrap" }}>
-            <input value={nameQ} onChange={e=>setNameQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch()} placeholder="🔍 Nombre del alumno..." style={{ flex:1, minWidth:"160px" }} />
-            <select value={gradeQ} onChange={e=>setGradeQ(e.target.value)} style={{ width:"120px" }}>
-              <option value="">Todos los años</option>
-              {GRADES.map(g=><option key={g} value={g}>{g}</option>)}
-            </select>
-            <button className="btn-primary" onClick={doSearch} disabled={searching}>{searching?"Buscando...":"Buscar"}</button>
-          </div>
-          {searchResults.length > 0 && (
-            <div style={{ display:"flex", flexDirection:"column", gap:"6px", maxHeight:"300px", overflowY:"auto" }}>
-              {searchResults.map(s => (
-                <div key={s.id} onClick={()=>selectStudent(s)} style={{ padding:"12px 16px", background:"#f8fafc", borderRadius:"10px", border:"1px solid #e2e8f0", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <span style={{ fontWeight:600, color:"#1e293b" }}>{s.name}</span>
-                  <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{s.grade}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <AlumnoSearch onSelect={selectStudent} label="Buscar alumno para ver sus notas" />
         </div>
       ) : (
         <div>
@@ -343,7 +314,7 @@ function StudentView() {
                 <div style={{ fontSize:"1.8rem", fontWeight:800, color: globalAvg==="–"?"#94a3b8":scoreColor(parseFloat(globalAvg)), fontFamily:"'Playfair Display',serif" }}>{globalAvg}</div>
                 <div style={{ fontSize:"0.7rem", color:"#94a3b8", textTransform:"uppercase" }}>Promedio general</div>
               </div>
-              <button onClick={()=>{ setSelectedStudent(null); setStudentGrades([]); setNameQ(""); }} style={{ padding:"8px 16px", borderRadius:"10px", border:"1px solid #e2e8f0", cursor:"pointer", background:"white", fontSize:"0.82rem" }}>← Volver</button>
+              <button onClick={()=>{ setSelectedStudent(null); setStudentGrades([]); }} style={{ padding:"8px 16px", borderRadius:"10px", border:"1px solid #e2e8f0", cursor:"pointer", background:"white", fontSize:"0.82rem" }}>← Volver</button>
             </div>
           </div>
 
@@ -361,7 +332,7 @@ function StudentView() {
                   ))}
                 </div>
               </div>
-              {Object.keys(subjectMap).length === 0 ? (
+              {Object.keys(subjectMap).length===0 ? (
                 <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}><p>No hay evaluaciones registradas.</p></div>
               ) : (
                 <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
@@ -401,23 +372,21 @@ function StudentView() {
   );
 }
 
-function ObservationsTab({ user, profile, observations, setObservations, setSaving }) {
-  const [nameQ, setNameQ] = useState("");
-  const [gradeQ, setGradeQ] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [searching, setSearching] = useState(false);
+// ─── Observaciones (lazy) ─────────────────────────────────────────
+function ObservationsTab({ user, profile, setSaving }) {
+  const [observations, setObservations] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [form, setForm] = useState({ text:"", date:new Date().toISOString().split("T")[0] });
   const [success, setSuccess] = useState(false);
   const [nameFilter, setNameFilter] = useState("");
   const subjects = profile.subjects || (profile.subject ? [profile.subject] : []);
 
-  async function doSearch() {
-    if (!nameQ && !gradeQ) return;
-    setSearching(true);
-    const r = await searchStudents({ name: nameQ, grade: gradeQ });
-    setSearchResults(r);
-    setSearching(false);
+  async function cargarObservaciones() {
+    setLoading(true);
+    const o = await getObservationsByTeacher(user.uid);
+    setObservations(o); setLoaded(true); setLoading(false);
   }
 
   async function submit() {
@@ -435,8 +404,9 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
     };
     const id = await createObservation(data);
     setObservations(prev => [{ id, ...data }, ...prev]);
+    if (!loaded) setLoaded(true);
     setForm({ text:"", date:new Date().toISOString().split("T")[0] });
-    setSelectedStudent(null); setSearchResults([]); setNameQ(""); setGradeQ("");
+    setSelectedStudent(null);
     setSuccess(true); setTimeout(()=>setSuccess(false), 2500);
     setSaving(false);
   }
@@ -455,6 +425,7 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
       <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 20px" }}>Observaciones</h2>
       {success && <div className="fade" style={{ background:"#d1fae5", border:"1px solid #6ee7b7", borderRadius:"10px", padding:"12px 16px", marginBottom:"20px", color:"#065f46", fontWeight:600 }}>✅ Observación guardada</div>}
 
+      {/* Formulario nueva observación */}
       <div className="card" style={{ padding:"24px", marginBottom:"24px", border:"2px solid #e0e7ff" }}>
         <h3 style={{ margin:"0 0 16px", color:"#1e3a5f", fontSize:"1rem" }}>Nueva observación</h3>
         {selectedStudent ? (
@@ -463,29 +434,11 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
               <span style={{ fontWeight:700, color:"#1e293b" }}>{selectedStudent.name}</span>
               <span className="badge" style={{ background:"white", color:"#1e40af", marginLeft:"8px" }}>{selectedStudent.grade}</span>
             </div>
-            <button onClick={()=>{ setSelectedStudent(null); setSearchResults([]); }} style={{ fontSize:"0.8rem", color:"#dc2626", background:"none", border:"none", cursor:"pointer" }}>✕ Cambiar</button>
+            <button onClick={()=>setSelectedStudent(null)} style={{ fontSize:"0.8rem", color:"#dc2626", background:"none", border:"none", cursor:"pointer" }}>✕ Cambiar</button>
           </div>
         ) : (
           <div style={{ marginBottom:"16px" }}>
-            <label>Buscar alumno</label>
-            <div style={{ display:"flex", gap:"10px", marginTop:"6px", flexWrap:"wrap" }}>
-              <input value={nameQ} onChange={e=>setNameQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch()} placeholder="🔍 Nombre..." style={{ flex:1, minWidth:"140px" }} />
-              <select value={gradeQ} onChange={e=>setGradeQ(e.target.value)} style={{ width:"110px" }}>
-                <option value="">Todos los años</option>
-                {GRADES.map(g=><option key={g} value={g}>{g}</option>)}
-              </select>
-              <button className="btn-primary" onClick={doSearch} disabled={searching}>{searching?"Buscando...":"Buscar"}</button>
-            </div>
-            {searchResults.length > 0 && (
-              <div style={{ marginTop:"8px", display:"flex", flexDirection:"column", gap:"6px", maxHeight:"180px", overflowY:"auto" }}>
-                {searchResults.map(s => (
-                  <div key={s.id} onClick={()=>{ setSelectedStudent(s); setSearchResults([]); }} style={{ padding:"10px 14px", background:"#f8fafc", borderRadius:"8px", border:"1px solid #e2e8f0", cursor:"pointer", display:"flex", justifyContent:"space-between" }}>
-                    <span style={{ fontWeight:600 }}>{s.name}</span>
-                    <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{s.grade}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <AlumnoSearch onSelect={setSelectedStudent} label="Buscar alumno" />
           </div>
         )}
         {selectedStudent && (
@@ -505,36 +458,68 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
         )}
       </div>
 
-      <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 12px" }}>Mis observaciones ({filtered.length})</h3>
-      <input value={nameFilter} onChange={e=>setNameFilter(e.target.value)} placeholder="🔍 Filtrar por nombre de alumno..." style={{ width:"100%", marginBottom:"16px" }} />
-      {filtered.length===0 ? (
-        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}><div style={{ fontSize:"3rem", marginBottom:"12px" }}>💬</div><p>No hay observaciones cargadas aún</p></div>
-      ) : (
-        <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
-          {filtered.map(o => (
-            <div key={o.id} className="card" style={{ padding:"16px 20px", borderLeft:"4px solid #7c3aed" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"8px" }}>
-                <div>
-                  <span style={{ fontWeight:700, color:"#1e293b" }}>{o.studentName}</span>
-                  <span className="badge" style={{ background:"#dbeafe", color:"#1e40af", marginLeft:"8px" }}>{o.studentGrade}</span>
-                </div>
-                <div style={{ display:"flex", alignItems:"center", gap:"12px" }}>
-                  <span style={{ fontSize:"0.78rem", color:"#94a3b8" }}>{o.date}</span>
-                  <button className="btn-danger" onClick={()=>removeObs(o.id)}>Eliminar</button>
-                </div>
-              </div>
-              <p style={{ margin:0, color:"#475569", fontSize:"0.9rem", lineHeight:1.5 }}>{o.text}</p>
-            </div>
-          ))}
+      {/* Listado lazy */}
+      <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 12px" }}>Mis observaciones</h3>
+      {!loaded ? (
+        <div className="card" style={{ padding:"40px", textAlign:"center" }}>
+          <div style={{ fontSize:"2.5rem", marginBottom:"12px" }}>💬</div>
+          <p style={{ color:"#64748b", marginBottom:"20px" }}>Presioná el botón para cargar tus observaciones</p>
+          <button className="btn-primary" onClick={cargarObservaciones} disabled={loading}>
+            {loading ? "Cargando..." : "🔍 Cargar mis observaciones"}
+          </button>
         </div>
+      ) : (
+        <>
+          <input value={nameFilter} onChange={e=>setNameFilter(e.target.value)} placeholder="🔍 Filtrar por nombre de alumno..." style={{ width:"100%", marginBottom:"16px" }} />
+          {filtered.length===0 ? (
+            <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}><p>No hay observaciones{nameFilter?" con ese filtro":""} aún.</p></div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
+              {filtered.map(o => (
+                <div key={o.id} className="card" style={{ padding:"16px 20px", borderLeft:"4px solid #7c3aed" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"8px" }}>
+                    <div>
+                      <span style={{ fontWeight:700, color:"#1e293b" }}>{o.studentName}</span>
+                      <span className="badge" style={{ background:"#dbeafe", color:"#1e40af", marginLeft:"8px" }}>{o.studentGrade}</span>
+                    </div>
+                    <div style={{ display:"flex", alignItems:"center", gap:"12px" }}>
+                      <span style={{ fontSize:"0.78rem", color:"#94a3b8" }}>{o.date}</span>
+                      <button className="btn-danger" onClick={()=>removeObs(o.id)}>Eliminar</button>
+                    </div>
+                  </div>
+                  <p style={{ margin:0, color:"#475569", fontSize:"0.9rem", lineHeight:1.5 }}>{o.text}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 }
 
-function Ranking({ grades, hasMore, subject }) {
+// ─── Rendimiento (lazy) ───────────────────────────────────────────
+function Ranking({ user, subject }) {
+  const [grades, setGrades] = useState([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [nameFilter, setNameFilter] = useState("");
   const [gradeFilter, setGradeFilter] = useState("");
+
+  async function cargar() {
+    setLoading(true);
+    const { grades: g, hasMore: hm } = await getGradesByTeacherPaged(user.uid);
+    setGrades(g); setHasMore(hm); setLoaded(true); setLoading(false);
+  }
+
+  async function loadMore() {
+    setLoadingMore(true);
+    const { grades: g, hasMore: hm } = await getMoreGradesByTeacher(user.uid);
+    setGrades(g); setHasMore(hm); setLoadingMore(false);
+  }
+
   const subjectGrades = grades.filter(g => g.subject === subject);
   const studentMap = {};
   subjectGrades.forEach(g => {
@@ -549,51 +534,71 @@ function Ranking({ grades, hasMore, subject }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 8px" }}>Rendimiento — {subject}</h2>
-      {hasMore && <p style={{ color:"#f59e0b", fontSize:"0.82rem", marginBottom:"16px" }}>⚠️ Hay más evaluaciones sin cargar. Cargalas desde "Mis evaluaciones" para ver el rendimiento completo.</p>}
-      <div style={{ display:"flex", gap:"10px", marginBottom:"20px", flexWrap:"wrap" }}>
-        <input value={nameFilter} onChange={e=>setNameFilter(e.target.value)} placeholder="🔍 Buscar alumno..." style={{ flex:1, minWidth:"160px" }} />
-        <select value={gradeFilter} onChange={e=>setGradeFilter(e.target.value)} style={{ width:"120px" }}>
-          <option value="">Todos los años</option>
-          {GRADES.map(g=><option key={g} value={g}>{g}</option>)}
-        </select>
-      </div>
-      {students.length===0 ? (
-        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}><p>No hay evaluaciones para esta materia aún.</p></div>
+      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 20px" }}>Rendimiento — {subject}</h2>
+
+      {!loaded ? (
+        <div className="card" style={{ padding:"48px", textAlign:"center" }}>
+          <div style={{ fontSize:"3rem", marginBottom:"12px" }}>📊</div>
+          <p style={{ color:"#64748b", marginBottom:"20px" }}>Presioná el botón para ver el rendimiento de tus alumnos</p>
+          <button className="btn-primary" onClick={cargar} disabled={loading} style={{ padding:"12px 28px", fontSize:"1rem" }}>
+            {loading ? "Cargando..." : "🔍 Ver rendimiento"}
+          </button>
+        </div>
       ) : (
-        <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
-          {students.map((s, idx) => {
-            const sa = avg(s.scores);
-            const color = sa==="–" ? "#e2e8f0" : scoreColor(parseFloat(sa));
-            return (
-              <div key={s.id} className="card" style={{ padding:"16px 20px", borderLeft:`4px solid ${color}` }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"6px" }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
-                    <span style={{ fontWeight:800, color:"#94a3b8", fontSize:"0.9rem", minWidth:"24px" }}>#{idx+1}</span>
-                    <div>
-                      <div style={{ fontWeight:700, color:"#1e293b" }}>{s.name}</div>
-                      {s.grade && <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{s.grade}</span>}
+        <>
+          {hasMore && <p style={{ color:"#f59e0b", fontSize:"0.82rem", marginBottom:"16px" }}>⚠️ Hay más evaluaciones sin cargar. Cargalas para ver el rendimiento completo.</p>}
+          <div style={{ display:"flex", gap:"10px", marginBottom:"20px", flexWrap:"wrap" }}>
+            <input value={nameFilter} onChange={e=>setNameFilter(e.target.value)} placeholder="🔍 Buscar alumno..." style={{ flex:1, minWidth:"160px" }} />
+            <select value={gradeFilter} onChange={e=>setGradeFilter(e.target.value)} style={{ width:"120px" }}>
+              <option value="">Todos los años</option>
+              {GRADES.map(g=><option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
+          {students.length===0 ? (
+            <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}><p>No hay evaluaciones para esta materia aún.</p></div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
+              {students.map((s, idx) => {
+                const sa = avg(s.scores);
+                const color = sa==="–" ? "#e2e8f0" : scoreColor(parseFloat(sa));
+                return (
+                  <div key={s.id} className="card" style={{ padding:"16px 20px", borderLeft:`4px solid ${color}` }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"6px" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
+                        <span style={{ fontWeight:800, color:"#94a3b8", fontSize:"0.9rem", minWidth:"24px" }}>#{idx+1}</span>
+                        <div>
+                          <div style={{ fontWeight:700, color:"#1e293b" }}>{s.name}</div>
+                          {s.grade && <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{s.grade}</span>}
+                        </div>
+                      </div>
+                      <div style={{ textAlign:"right" }}>
+                        <div style={{ fontSize:"1.6rem", fontWeight:800, color, fontFamily:"'Playfair Display',serif" }}>{sa}</div>
+                        <div style={{ fontSize:"0.7rem", color:"#94a3b8" }}>{s.scores.length} eval.</div>
+                      </div>
+                    </div>
+                    <div style={{ display:"flex", gap:"6px", flexWrap:"wrap" }}>
+                      {[1,2,3].map(t => {
+                        const ta = avg(s.trimScores[t]);
+                        return ta !== "–" ? (
+                          <span key={t} style={{ fontSize:"0.72rem", padding:"2px 8px", borderRadius:"20px", background:`${scoreColor(parseFloat(ta))}15`, color:scoreColor(parseFloat(ta)), fontWeight:600, border:`1px solid ${scoreColor(parseFloat(ta))}30` }}>
+                            {trimNames[t-1]}: {ta}
+                          </span>
+                        ) : null;
+                      })}
                     </div>
                   </div>
-                  <div style={{ textAlign:"right" }}>
-                    <div style={{ fontSize:"1.6rem", fontWeight:800, color, fontFamily:"'Playfair Display',serif" }}>{sa}</div>
-                    <div style={{ fontSize:"0.7rem", color:"#94a3b8" }}>{s.scores.length} eval.</div>
-                  </div>
-                </div>
-                <div style={{ display:"flex", gap:"6px", flexWrap:"wrap" }}>
-                  {[1,2,3].map(t => {
-                    const ta = avg(s.trimScores[t]);
-                    return ta !== "–" ? (
-                      <span key={t} style={{ fontSize:"0.72rem", padding:"2px 8px", borderRadius:"20px", background:`${scoreColor(parseFloat(ta))}15`, color:scoreColor(parseFloat(ta)), fontWeight:600, border:`1px solid ${scoreColor(parseFloat(ta))}30` }}>
-                        {trimNames[t-1]}: {ta}
-                      </span>
-                    ) : null;
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+          )}
+          {hasMore && (
+            <div style={{ textAlign:"center", marginTop:"20px" }}>
+              <button onClick={loadMore} disabled={loadingMore} style={{ padding:"10px 28px", borderRadius:"10px", border:"2px solid #1e3a5f", background:"white", color:"#1e3a5f", cursor:"pointer", fontWeight:600, fontSize:"0.9rem" }}>
+                {loadingMore ? "Cargando..." : "⬇ Cargar más evaluaciones"}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
