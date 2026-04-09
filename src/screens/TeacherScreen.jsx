@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor } from "../components";
-import { searchStudents, getGradesByTeacher, createGrade, deleteGrade, getObservationsByTeacher, createObservation, deleteObservation } from "../db";
+import { searchStudents, getGradesByTeacher, getGradesByStudent, createGrade, deleteGrade, getObservationsByTeacher, createObservation, deleteObservation } from "../db";
 
 const GRADES = ["1°","2°","3°","4°","5°","6°"];
 
@@ -44,8 +44,8 @@ export default function TeacherScreen({ user, profile, logout }) {
           </div>
         )}
 
-        <div style={{ borderBottom:"2px solid #e2e8f0", marginBottom:"28px", display:"flex", gap:"4px" }}>
-          {[["add","📝 Cargar nota"],["mygrades","📋 Mis evaluaciones"],["observations","💬 Observaciones"],["ranking","📊 Rendimiento"]].map(([k,l])=>(
+        <div style={{ borderBottom:"2px solid #e2e8f0", marginBottom:"28px", display:"flex", gap:"4px", flexWrap:"wrap" }}>
+          {[["add","📝 Cargar nota"],["mygrades","📋 Mis evaluaciones"],["student","👤 Ver alumno"],["observations","💬 Observaciones"],["ranking","📊 Rendimiento"]].map(([k,l])=>(
             <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>setTab(k)}>{l}</button>
           ))}
         </div>
@@ -54,6 +54,7 @@ export default function TeacherScreen({ user, profile, logout }) {
           <div className="fade" key={tab}>
             {tab==="add" && <AddGrade user={user} profile={profile} subject={selectedSubject} grades={grades} setGrades={setGrades} setSaving={setSaving} />}
             {tab==="mygrades" && <MyGrades grades={grades} setGrades={setGrades} setSaving={setSaving} />}
+            {tab==="student" && <StudentView />}
             {tab==="observations" && <ObservationsTab user={user} profile={profile} observations={observations} setObservations={setObservations} setSaving={setSaving} />}
             {tab==="ranking" && <Ranking grades={grades} subject={selectedSubject} />}
           </div>
@@ -86,8 +87,7 @@ function AddGrade({ user, profile, subject, grades, setGrades, setSaving }) {
     if (score < 1 || score > 10) { alert("La nota debe estar entre 1 y 10"); return; }
     setSaving(true);
     const data = {
-      ...form,
-      score,
+      ...form, score,
       teacherId: user.uid,
       teacherName: profile.name || "",
       subject,
@@ -177,6 +177,12 @@ function MyGrades({ grades, setGrades, setSaving }) {
     .filter(g => trim===0 || g.trimester===trim)
     .filter(g => !nameFilter || (g.studentName||"").toLowerCase().includes(nameFilter.toLowerCase()));
 
+  // Promedios por trimestre de mis evaluaciones
+  const trimAvgs = [1,2,3].map(t => {
+    const tg = grades.filter(g => g.trimester === t);
+    return { t, avg: avg(tg.map(g=>g.score)), count: tg.length };
+  });
+
   async function removeGrade(id) {
     setSaving(true);
     await deleteGrade(id);
@@ -187,13 +193,27 @@ function MyGrades({ grades, setGrades, setSaving }) {
   return (
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" }}>
-        <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>Mis evaluaciones ({filtered.length})</h2>
+        <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>Mis evaluaciones ({grades.length})</h2>
         <div style={{ display:"flex", gap:"6px" }}>
           {[["Todos",0],...trimNames.map((n,i)=>[n,i+1])].map(([l,v])=>(
             <button key={v} onClick={()=>setTrim(v)} style={{ padding:"5px 12px", borderRadius:"20px", background:trim===v?"#1e3a5f":"#f1f5f9", color:trim===v?"white":"#64748b", border:"none", cursor:"pointer", fontSize:"0.78rem", fontWeight:600 }}>{l}</button>
           ))}
         </div>
       </div>
+
+      {/* Promedios por trimestre */}
+      <div className="card" style={{ padding:"16px 20px", marginBottom:"16px" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"10px" }}>
+          {trimAvgs.map(({ t, avg: ta, count }) => (
+            <div key={t} style={{ textAlign:"center", padding:"10px", background:"#f8fafc", borderRadius:"10px", border:`2px solid ${ta==="–"?"#e2e8f0":scoreColor(parseFloat(ta))}` }}>
+              <div style={{ fontSize:"0.72rem", color:"#64748b", fontWeight:600, textTransform:"uppercase" }}>{trimNames[t-1]}</div>
+              <div style={{ fontSize:"1.6rem", fontWeight:800, color: ta==="–"?"#94a3b8":scoreColor(parseFloat(ta)), fontFamily:"'Playfair Display',serif" }}>{ta}</div>
+              <div style={{ fontSize:"0.7rem", color:"#94a3b8" }}>{count} eval.</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <input value={nameFilter} onChange={e=>setNameFilter(e.target.value)} placeholder="🔍 Filtrar por nombre de alumno..." style={{ width:"100%", marginBottom:"16px" }} />
       {filtered.length===0 ? (
         <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}><div style={{ fontSize:"3rem", marginBottom:"12px" }}>📋</div><p>No hay evaluaciones aún</p></div>
@@ -203,13 +223,145 @@ function MyGrades({ grades, setGrades, setSaving }) {
             <div key={g.id} className="card" style={{ padding:"16px 20px", display:"flex", alignItems:"center", gap:"16px" }}>
               <div style={{ width:"44px", height:"44px", borderRadius:"50%", background:scoreColor(g.score), display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:800, fontSize:"1.1rem", flexShrink:0 }}>{g.score}</div>
               <div style={{ flex:1 }}>
-                <div style={{ fontWeight:700, color:"#1e293b" }}>{g.studentName||"–"}</div>
+                <div style={{ fontWeight:700, color:"#1e293b" }}>{g.studentName||"–"} {g.studentGrade && <span className="badge" style={{ background:"#dbeafe", color:"#1e40af", marginLeft:"4px" }}>{g.studentGrade}</span>}</div>
                 <div style={{ fontSize:"0.8rem", color:"#64748b" }}>{g.subject} · {g.type} · {trimNames[g.trimester-1]} · {g.date}</div>
                 {g.note && <div style={{ fontSize:"0.8rem", color:"#7c3aed", marginTop:"2px" }}>💬 {g.note}</div>}
               </div>
               <button className="btn-danger" onClick={()=>removeGrade(g.id)}>Eliminar</button>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Vista de alumno individual ───────────────────────────────────
+function StudentView() {
+  const [nameQ, setNameQ] = useState("");
+  const [gradeQ, setGradeQ] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [studentGrades, setStudentGrades] = useState([]);
+  const [loadingGrades, setLoadingGrades] = useState(false);
+
+  async function doSearch() {
+    if (!nameQ && !gradeQ) return;
+    setSearching(true);
+    const r = await searchStudents({ name: nameQ, grade: gradeQ });
+    setSearchResults(r);
+    setSearching(false);
+  }
+
+  async function selectStudent(s) {
+    setSelectedStudent(s);
+    setSearchResults([]);
+    setLoadingGrades(true);
+    const g = await getGradesByStudent(s.id);
+    setStudentGrades(g);
+    setLoadingGrades(false);
+  }
+
+  const globalAvg = avg(studentGrades.map(g=>g.score));
+  const trimAvgs = [1,2,3].map(t => {
+    const tg = studentGrades.filter(g=>g.trimester===t);
+    return { t, avg: avg(tg.map(g=>g.score)), count: tg.length };
+  });
+  const subjectMap = {};
+  studentGrades.forEach(g => { if (!subjectMap[g.subject]) subjectMap[g.subject]=[]; subjectMap[g.subject].push(g); });
+
+  return (
+    <div>
+      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 20px" }}>Ver alumno</h2>
+
+      {/* Buscador */}
+      {!selectedStudent ? (
+        <div className="card" style={{ padding:"24px" }}>
+          <div style={{ display:"flex", gap:"10px", marginBottom:"10px", flexWrap:"wrap" }}>
+            <input value={nameQ} onChange={e=>setNameQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch()} placeholder="🔍 Nombre del alumno..." style={{ flex:1, minWidth:"160px" }} />
+            <select value={gradeQ} onChange={e=>setGradeQ(e.target.value)} style={{ width:"120px" }}>
+              <option value="">Todos los años</option>
+              {GRADES.map(g=><option key={g} value={g}>{g}</option>)}
+            </select>
+            <button className="btn-primary" onClick={doSearch} disabled={searching}>{searching?"Buscando...":"Buscar"}</button>
+          </div>
+          {searchResults.length > 0 && (
+            <div style={{ display:"flex", flexDirection:"column", gap:"6px", maxHeight:"300px", overflowY:"auto" }}>
+              {searchResults.map(s => (
+                <div key={s.id} onClick={()=>selectStudent(s)} style={{ padding:"12px 16px", background:"#f8fafc", borderRadius:"10px", border:"1px solid #e2e8f0", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <span style={{ fontWeight:600, color:"#1e293b" }}>{s.name}</span>
+                  <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{s.grade}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div>
+          {/* Header alumno */}
+          <div className="card" style={{ padding:"20px 24px", marginBottom:"16px", borderLeft:"5px solid #1e3a5f", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div>
+              <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 4px", fontSize:"1.3rem" }}>{selectedStudent.name}</h3>
+              <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{selectedStudent.grade}</span>
+            </div>
+            <div style={{ display:"flex", gap:"20px", textAlign:"center", alignItems:"center" }}>
+              <div>
+                <div style={{ fontSize:"1.8rem", fontWeight:800, color: globalAvg==="–"?"#94a3b8":scoreColor(parseFloat(globalAvg)), fontFamily:"'Playfair Display',serif" }}>{globalAvg}</div>
+                <div style={{ fontSize:"0.7rem", color:"#94a3b8", textTransform:"uppercase" }}>Promedio general</div>
+              </div>
+              <button onClick={()=>{ setSelectedStudent(null); setStudentGrades([]); setNameQ(""); }} style={{ padding:"8px 16px", borderRadius:"10px", border:"1px solid #e2e8f0", cursor:"pointer", background:"white", fontSize:"0.82rem" }}>← Volver</button>
+            </div>
+          </div>
+
+          {loadingGrades ? <div style={{ textAlign:"center", padding:"40px", color:"#94a3b8" }}>Cargando notas...</div> : (
+            <>
+              {/* Promedios por trimestre */}
+              <div className="card" style={{ padding:"16px 20px", marginBottom:"16px" }}>
+                <h4 style={{ margin:"0 0 12px", color:"#1e3a5f", fontSize:"0.9rem", textTransform:"uppercase", letterSpacing:"0.5px" }}>Promedio por trimestre</h4>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"10px" }}>
+                  {trimAvgs.map(({ t, avg: ta, count }) => (
+                    <div key={t} style={{ textAlign:"center", padding:"10px", background:"#f8fafc", borderRadius:"10px", border:`2px solid ${ta==="–"?"#e2e8f0":scoreColor(parseFloat(ta))}` }}>
+                      <div style={{ fontSize:"0.72rem", color:"#64748b", fontWeight:600, textTransform:"uppercase" }}>{trimNames[t-1]}</div>
+                      <div style={{ fontSize:"1.6rem", fontWeight:800, color: ta==="–"?"#94a3b8":scoreColor(parseFloat(ta)), fontFamily:"'Playfair Display',serif" }}>{ta}</div>
+                      <div style={{ fontSize:"0.7rem", color:"#94a3b8" }}>{count} eval.</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notas por materia */}
+              {Object.keys(subjectMap).length === 0 ? (
+                <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}><p>No hay evaluaciones registradas para este alumno.</p></div>
+              ) : (
+                <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
+                  {Object.entries(subjectMap).map(([subject, sGrades]) => {
+                    const sAvg = parseFloat(avg(sGrades.map(g=>g.score)));
+                    return (
+                      <div key={subject} className="card" style={{ overflow:"hidden" }}>
+                        <div style={{ padding:"12px 20px", background:"#f8fafc", borderBottom:"1px solid #e2e8f0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                          <span style={{ fontWeight:700, color:"#1e3a5f" }}>{subject}</span>
+                          <div style={{ display:"flex", alignItems:"center", gap:"12px" }}>
+                            <span style={{ fontWeight:800, fontSize:"1.2rem", color:scoreColor(sAvg), fontFamily:"'Playfair Display',serif" }}>{avg(sGrades.map(g=>g.score))}</span>
+                            <span style={{ fontSize:"0.75rem", color:"#94a3b8" }}>{sGrades.length} eval.</span>
+                          </div>
+                        </div>
+                        {sGrades.map(g => (
+                          <div key={g.id} style={{ padding:"10px 20px", display:"flex", alignItems:"center", gap:"12px", borderBottom:"1px solid #f8fafc" }}>
+                            <div style={{ width:"32px", height:"32px", borderRadius:"50%", background:scoreColor(g.score), display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:800, fontSize:"0.85rem", flexShrink:0 }}>{g.score}</div>
+                            <div style={{ flex:1 }}>
+                              <span style={{ fontWeight:600, fontSize:"0.88rem", color:"#1e293b" }}>{g.type}</span>
+                              <span style={{ fontSize:"0.78rem", color:"#94a3b8", marginLeft:"8px" }}>{trimNames[g.trimester-1]} · {g.date}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -225,7 +377,6 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
   const [form, setForm] = useState({ text:"", date:new Date().toISOString().split("T")[0] });
   const [success, setSuccess] = useState(false);
   const [nameFilter, setNameFilter] = useState("");
-
   const subjects = profile.subjects || (profile.subject ? [profile.subject] : []);
 
   async function doSearch() {
@@ -245,7 +396,7 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
       studentGrade: selectedStudent.grade || "",
       teacherId: user.uid,
       teacherName: profile.name || "",
-      subjects: subjects,
+      subjects,
       text: form.text.trim(),
       date: form.date,
     };
@@ -273,7 +424,6 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
 
       <div className="card" style={{ padding:"24px", marginBottom:"24px", border:"2px solid #e0e7ff" }}>
         <h3 style={{ margin:"0 0 16px", color:"#1e3a5f", fontSize:"1rem" }}>Nueva observación</h3>
-
         {selectedStudent ? (
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 16px", background:"#dbeafe", borderRadius:"10px", marginBottom:"16px" }}>
             <div>
@@ -305,19 +455,12 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
             )}
           </div>
         )}
-
         {selectedStudent && (
           <>
             <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:"16px", alignItems:"start", marginBottom:"16px" }}>
               <div>
                 <label>Observación</label>
-                <textarea
-                  value={form.text}
-                  onChange={e=>setForm({...form,text:e.target.value})}
-                  placeholder="Ej: El alumno no trabajó durante la clase, se mostró desatento..."
-                  rows={3}
-                  style={{ width:"100%", border:"1.5px solid #cbd5e1", borderRadius:"10px", padding:"10px 14px", fontSize:"0.9rem", fontFamily:"inherit", resize:"vertical", marginTop:"4px" }}
-                />
+                <textarea value={form.text} onChange={e=>setForm({...form,text:e.target.value})} placeholder="Ej: El alumno no trabajó durante la clase..." rows={3} style={{ width:"100%", border:"1.5px solid #cbd5e1", borderRadius:"10px", padding:"10px 14px", fontSize:"0.9rem", fontFamily:"inherit", resize:"vertical", marginTop:"4px" }} />
               </div>
               <div>
                 <label>Fecha</label>
@@ -331,12 +474,8 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
 
       <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 12px" }}>Mis observaciones ({filtered.length})</h3>
       <input value={nameFilter} onChange={e=>setNameFilter(e.target.value)} placeholder="🔍 Filtrar por nombre de alumno..." style={{ width:"100%", marginBottom:"16px" }} />
-
       {filtered.length===0 ? (
-        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
-          <div style={{ fontSize:"3rem", marginBottom:"12px" }}>💬</div>
-          <p>No hay observaciones cargadas aún</p>
-        </div>
+        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}><div style={{ fontSize:"3rem", marginBottom:"12px" }}>💬</div><p>No hay observaciones cargadas aún</p></div>
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
           {filtered.map(o => (
@@ -366,12 +505,14 @@ function Ranking({ grades, subject }) {
   const subjectGrades = grades.filter(g => g.subject === subject);
   const studentMap = {};
   subjectGrades.forEach(g => {
-    if (!studentMap[g.studentId]) studentMap[g.studentId] = { id:g.studentId, name:g.studentName||"–", grade:g.studentGrade||"", scores:[] };
+    if (!studentMap[g.studentId]) studentMap[g.studentId] = { id:g.studentId, name:g.studentName||"–", grade:g.studentGrade||"", scores:[], trimScores:{1:[],2:[],3:[]} };
     studentMap[g.studentId].scores.push(g.score);
+    studentMap[g.studentId].trimScores[g.trimester]?.push(g.score);
   });
   let students = Object.values(studentMap);
   if (nameFilter) students = students.filter(s=>s.name.toLowerCase().includes(nameFilter.toLowerCase()));
   if (gradeFilter) students = students.filter(s=>s.grade===gradeFilter);
+  students.sort((a,b) => parseFloat(avg(b.scores)||0) - parseFloat(avg(a.scores)||0));
 
   return (
     <div>
@@ -386,21 +527,35 @@ function Ranking({ grades, subject }) {
       {students.length===0 ? (
         <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}><p>No hay evaluaciones para esta materia aún.</p></div>
       ) : (
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))", gap:"16px" }}>
-          {students.map(s => {
+        <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
+          {students.map((s, idx) => {
             const sa = avg(s.scores);
             const color = sa==="–" ? "#e2e8f0" : scoreColor(parseFloat(sa));
             return (
-              <div key={s.id} className="card" style={{ padding:"20px", borderTop:`3px solid ${color}` }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-                  <div>
-                    <div style={{ fontWeight:700, color:"#1e293b" }}>{s.name}</div>
-                    {s.grade && <span className="badge" style={{ background:"#dbeafe", color:"#1e40af", marginTop:"4px" }}>{s.grade}</span>}
+              <div key={s.id} className="card" style={{ padding:"16px 20px", borderLeft:`4px solid ${color}` }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
+                    <span style={{ fontWeight:800, color:"#94a3b8", fontSize:"0.9rem", minWidth:"24px" }}>#{idx+1}</span>
+                    <div>
+                      <div style={{ fontWeight:700, color:"#1e293b" }}>{s.name}</div>
+                      {s.grade && <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{s.grade}</span>}
+                    </div>
                   </div>
                   <div style={{ textAlign:"right" }}>
-                    <div style={{ fontSize:"1.8rem", fontWeight:800, color, fontFamily:"'Playfair Display',serif" }}>{sa}</div>
-                    <div style={{ fontSize:"0.72rem", color:"#94a3b8" }}>{s.scores.length} eval.</div>
+                    <div style={{ fontSize:"1.6rem", fontWeight:800, color, fontFamily:"'Playfair Display',serif" }}>{sa}</div>
+                    <div style={{ fontSize:"0.7rem", color:"#94a3b8" }}>{s.scores.length} eval.</div>
                   </div>
+                </div>
+                {/* Promedios por trimestre */}
+                <div style={{ display:"flex", gap:"6px", flexWrap:"wrap" }}>
+                  {[1,2,3].map(t => {
+                    const ta = avg(s.trimScores[t]);
+                    return ta !== "–" ? (
+                      <span key={t} style={{ fontSize:"0.72rem", padding:"2px 8px", borderRadius:"20px", background:`${scoreColor(parseFloat(ta))}15`, color:scoreColor(parseFloat(ta)), fontWeight:600, border:`1px solid ${scoreColor(parseFloat(ta))}30` }}>
+                        {trimNames[t-1]}: {ta}
+                      </span>
+                    ) : null;
+                  })}
                 </div>
               </div>
             );

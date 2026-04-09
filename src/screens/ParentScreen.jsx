@@ -61,6 +61,12 @@ export default function ParentScreen({ user, profile, logout }) {
   const globalAvg = avg(allChildGrades.map(g=>g.score));
   const totalMaterias = Object.keys(allChildGrades.reduce((a,g)=>({...a,[g.subject]:1}),{})).length;
 
+  // Promedios por trimestre
+  const trimAvgs = [1,2,3].map(t => {
+    const tg = allChildGrades.filter(g => g.trimester === t);
+    return { t, avg: avg(tg.map(g=>g.score)), count: tg.length };
+  });
+
   const subjectMap = {};
   childGrades.forEach(g => { if (!subjectMap[g.subject]) subjectMap[g.subject]=[]; subjectMap[g.subject].push(g); });
 
@@ -70,7 +76,6 @@ export default function ParentScreen({ user, profile, logout }) {
       <TopBar profile={profile} saving={false} logout={logout} subtitle="Portal de Familias" />
       <div style={{ maxWidth:"960px", margin:"0 auto", padding:"24px 20px" }}>
 
-        {/* Selector de hijo si tiene más de uno */}
         {students.length > 1 && (
           <div style={{ display:"flex", gap:"12px", marginBottom:"24px", flexWrap:"wrap" }}>
             {students.map(c => (
@@ -83,29 +88,43 @@ export default function ParentScreen({ user, profile, logout }) {
 
         {child && (
           <>
-            {/* Header del hijo */}
-            <div className="card" style={{ padding:"24px 28px", marginBottom:"24px", display:"flex", justifyContent:"space-between", alignItems:"center", borderLeft:"5px solid #1e3a5f" }}>
+            {/* Header */}
+            <div className="card" style={{ padding:"24px 28px", marginBottom:"20px", display:"flex", justifyContent:"space-between", alignItems:"center", borderLeft:"5px solid #1e3a5f", flexWrap:"wrap", gap:"16px" }}>
               <div>
                 <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 4px", fontSize:"1.6rem" }}>{child.name}</h2>
                 <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{child.grade}</span>
               </div>
-              <div style={{ display:"flex", gap:"28px", textAlign:"center" }}>
+              <div style={{ display:"flex", gap:"24px", textAlign:"center", flexWrap:"wrap" }}>
                 <div>
                   <div style={{ fontSize:"2rem", fontWeight:800, color: globalAvg==="–"?"#94a3b8":scoreColor(parseFloat(globalAvg)), fontFamily:"'Playfair Display',serif" }}>{globalAvg}</div>
-                  <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase", letterSpacing:"0.5px" }}>Promedio</div>
+                  <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>Promedio general</div>
                 </div>
                 <div>
                   <div style={{ fontSize:"2rem", fontWeight:800, color:"#1e3a5f", fontFamily:"'Playfair Display',serif" }}>{allChildGrades.length}</div>
-                  <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase", letterSpacing:"0.5px" }}>Evaluaciones</div>
+                  <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>Evaluaciones</div>
                 </div>
                 <div>
                   <div style={{ fontSize:"2rem", fontWeight:800, color:"#7c3aed", fontFamily:"'Playfair Display',serif" }}>{childObs.length}</div>
-                  <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase", letterSpacing:"0.5px" }}>Observaciones</div>
+                  <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>Observaciones</div>
                 </div>
               </div>
             </div>
 
-            {/* Tabs notas / observaciones */}
+            {/* Promedios por trimestre */}
+            <div className="card" style={{ padding:"20px 24px", marginBottom:"20px" }}>
+              <h3 style={{ margin:"0 0 14px", color:"#1e3a5f", fontFamily:"'Playfair Display',serif", fontSize:"1rem" }}>Promedio por trimestre</h3>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"12px" }}>
+                {trimAvgs.map(({ t, avg: ta, count }) => (
+                  <div key={t} style={{ textAlign:"center", padding:"12px", background:"#f8fafc", borderRadius:"12px", border:`2px solid ${ta==="–"?"#e2e8f0":scoreColor(parseFloat(ta))}` }}>
+                    <div style={{ fontSize:"0.75rem", color:"#64748b", fontWeight:600, textTransform:"uppercase", marginBottom:"4px" }}>{trimNames[t-1]}</div>
+                    <div style={{ fontSize:"1.8rem", fontWeight:800, color: ta==="–"?"#94a3b8":scoreColor(parseFloat(ta)), fontFamily:"'Playfair Display',serif" }}>{ta}</div>
+                    <div style={{ fontSize:"0.72rem", color:"#94a3b8", marginTop:"2px" }}>{count} evaluaciones</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Tabs */}
             <div style={{ borderBottom:"2px solid #e2e8f0", marginBottom:"20px", display:"flex", gap:"4px" }}>
               {[["grades","📊 Notas"],["observations","💬 Observaciones"]].map(([k,l])=>(
                 <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>setTab(k)}>{l}</button>
@@ -128,18 +147,34 @@ export default function ParentScreen({ user, profile, logout }) {
                   <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
                     {Object.entries(subjectMap).map(([subject, sGrades]) => {
                       const sAvg = parseFloat(avg(sGrades.map(g=>g.score)));
+                      // Promedio por trimestre de esta materia
+                      const allSubjectGrades = allChildGrades.filter(g=>g.subject===subject);
+                      const subTrimAvgs = [1,2,3].map(t => {
+                        const tg = allSubjectGrades.filter(g=>g.trimester===t);
+                        return { t, avg: avg(tg.map(g=>g.score)) };
+                      });
                       return (
                         <div key={subject} className="card" style={{ overflow:"hidden" }}>
-                          <div style={{ padding:"16px 20px", background:"#f8fafc", borderBottom:"1px solid #e2e8f0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                            <h3 style={{ margin:0, color:"#1e3a5f", fontFamily:"'Playfair Display',serif", fontSize:"1.05rem" }}>{subject}</h3>
-                            <div style={{ display:"flex", alignItems:"center", gap:"16px" }}>
-                              <div style={{ textAlign:"right" }}>
-                                <div style={{ fontWeight:800, fontSize:"1.4rem", color:scoreColor(sAvg), fontFamily:"'Playfair Display',serif" }}>{avg(sGrades.map(g=>g.score))}</div>
-                                <div style={{ fontSize:"0.7rem", color:"#94a3b8" }}>promedio</div>
+                          <div style={{ padding:"16px 20px", background:"#f8fafc", borderBottom:"1px solid #e2e8f0" }}>
+                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px" }}>
+                              <h3 style={{ margin:0, color:"#1e3a5f", fontFamily:"'Playfair Display',serif", fontSize:"1.05rem" }}>{subject}</h3>
+                              <div style={{ display:"flex", alignItems:"center", gap:"16px" }}>
+                                <div style={{ textAlign:"right" }}>
+                                  <div style={{ fontWeight:800, fontSize:"1.4rem", color:scoreColor(sAvg), fontFamily:"'Playfair Display',serif" }}>{avg(sGrades.map(g=>g.score))}</div>
+                                  <div style={{ fontSize:"0.7rem", color:"#94a3b8" }}>promedio</div>
+                                </div>
+                                <div style={{ width:"48px", height:"48px", borderRadius:"50%", background:`${scoreColor(sAvg)}20`, border:`3px solid ${scoreColor(sAvg)}`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                                  <span style={{ fontSize:"1.1rem" }}>{sAvg>=8?"🟢":sAvg>=6?"🟡":"🔴"}</span>
+                                </div>
                               </div>
-                              <div style={{ width:"48px", height:"48px", borderRadius:"50%", background:`${scoreColor(sAvg)}20`, border:`3px solid ${scoreColor(sAvg)}`, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                                <span style={{ fontSize:"1.1rem" }}>{sAvg>=8?"🟢":sAvg>=6?"🟡":"🔴"}</span>
-                              </div>
+                            </div>
+                            {/* Promedios por trimestre de la materia */}
+                            <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
+                              {subTrimAvgs.map(({ t, avg: ta }) => ta !== "–" && (
+                                <span key={t} style={{ fontSize:"0.75rem", padding:"3px 10px", borderRadius:"20px", background:`${scoreColor(parseFloat(ta))}15`, color:scoreColor(parseFloat(ta)), fontWeight:600, border:`1px solid ${scoreColor(parseFloat(ta))}30` }}>
+                                  {trimNames[t-1]}: {ta}
+                                </span>
+                              ))}
                             </div>
                           </div>
                           <div>
@@ -175,7 +210,7 @@ export default function ParentScreen({ user, profile, logout }) {
                       <div key={o.id} className="card" style={{ padding:"16px 20px", borderLeft:"4px solid #7c3aed" }}>
                         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" }}>
                           <div>
-                            <span style={{ fontWeight:600, color:"#7c3aed", fontSize:"0.85rem" }}>{o.teacherName}</span>
+                            <span style={{ fontWeight:600, color:"#7c3aed", fontSize:"0.85rem" }}>Prof. {o.teacherName}</span>
                             {o.subjects && o.subjects.length > 0 && (
                               <span style={{ fontSize:"0.78rem", color:"#94a3b8", marginLeft:"8px" }}>· {o.subjects.join(", ")}</span>
                             )}
