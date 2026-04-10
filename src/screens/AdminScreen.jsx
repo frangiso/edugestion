@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor } from "../components";
-import { getAllTeachers, getGradesStats, searchGrades, searchObservations, createUser, updateStudent, createStudent, deleteStudent, deleteUserProfile, deleteGrade, deleteObservation, searchStudents, searchParents, getGradesByStudent } from "../db";
+import { getAllTeachers, getGradesStats, searchGrades, searchObservations, createUser, updateStudent, updateUserProfile, createStudent, deleteStudent, deleteUserProfile, deleteGrade, deleteObservation, searchStudents, searchParents, getGradesByStudent } from "../db";
 
 const GRADES = ["1°","2°","3°","4°","5°","6°"];
-const SUBJECTS = ["Matemática","Tecnología","Lengua y Literatura","Inglés","Lenguaje de las Artes Visuales","Psicología","Geografía","Política y Ciudadanía","Filosofía","Biología","Producción de las Artes Visuales","Educación Física","Artes Visuales y T.I.C.","Química","Educación Artística","Historia","Física","Economía","Formación para la Vida y el Trabajo","Sociología","Formación Ética","E.O.I."];
+const SUBJECTS = ["Matemática","Tecnología","Lengua y Literatura","Inglés","Lenguaje de las Artes Visuales","Psicología","Geografía","Política y Ciudadanía","Filosofía","Biología","Producción de las Artes Visuales","Educación Física","Artes Visuales y T.I.C.","Química","Educación Artística","Historia","Física","Economía","Formación para la Vida y el Trabajo","Sociología","Formación Ética","E.O.I.","Arte e Industrias Culturales","Arte Cultura y Sociedades"];
 
 export default function AdminScreen({ user, profile, logout }) {
   const [tab, setTab] = useState("overview");
@@ -16,7 +16,6 @@ export default function AdminScreen({ user, profile, logout }) {
 
   async function loadAll() {
     setLoading(true);
-    // Solo carga profesores y stats resumidas — NO todas las notas
     const [t, s] = await Promise.all([getAllTeachers(), getGradesStats()]);
     setTeachers(t); setStats(s);
     setLoading(false);
@@ -54,7 +53,6 @@ function Overview({ stats, teachers }) {
     { icon:"👨‍🏫", label:"Profesores", value: teachers.length, color:"#065f46" },
     { icon:"📝", label:"Evaluaciones", value: stats?.total || 0, color:"#4c1d95" },
   ];
-
   return (
     <div>
       <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 20px" }}>Resumen del año escolar</h2>
@@ -67,7 +65,6 @@ function Overview({ stats, teachers }) {
           </div>
         ))}
       </div>
-
       <div className="card" style={{ padding:"24px" }}>
         <h3 style={{ margin:"0 0 16px", color:"#1e3a5f", fontFamily:"'Playfair Display',serif", fontSize:"1.1rem" }}>Promedio por trimestre</h3>
         {(stats?.byTrimester || []).map(({ t, avg: ta, count }) => (
@@ -89,7 +86,6 @@ function Overview({ stats, teachers }) {
   );
 }
 
-// ─── Buscador de alumnos reutilizable ─────────────────────────────
 function StudentSearch({ onSelect, buttonLabel = "Seleccionar" }) {
   const [nameQ, setNameQ] = useState("");
   const [gradeQ, setGradeQ] = useState("");
@@ -132,7 +128,6 @@ function StudentSearch({ onSelect, buttonLabel = "Seleccionar" }) {
   );
 }
 
-// ─── Alumnos ──────────────────────────────────────────────────────
 function StudentsTab({ setSaving }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name:"", grade:"", tutorEmail:"" });
@@ -272,18 +267,38 @@ function StudentsTab({ setSaving }) {
 function TeachersTab({ teachers, setTeachers, setSaving }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name:"", email:"", password:"", subjects:[] });
+  const [editingTeacher, setEditingTeacher] = useState(null);
+  const [editSubjects, setEditSubjects] = useState([]);
 
   function toggleSubject(s) {
     setForm(f => ({ ...f, subjects: f.subjects.includes(s) ? f.subjects.filter(x=>x!==s) : [...f.subjects, s] }));
   }
 
+  function toggleEditSubject(s) {
+    setEditSubjects(prev => prev.includes(s) ? prev.filter(x=>x!==s) : [...prev, s]);
+  }
+
   async function addTeacher() {
-    if (!form.name || !form.email || !form.password || form.subjects.length===0) { alert("Completá todos los campos y seleccioná al menos una materia"); return; }
+    if (!form.name || !form.email || !form.password || form.subjects.length===0) {
+      alert("Completá todos los campos y seleccioná al menos una materia"); return;
+    }
     setSaving(true);
     try {
       const uid = await createUser(form.email, form.password, { name:form.name, subjects:form.subjects, subject:form.subjects[0], role:"teacher" });
       setTeachers(prev => [...prev, { id:uid, role:"teacher", name:form.name, email:form.email, subjects:form.subjects, subject:form.subjects[0] }]);
       setForm({ name:"", email:"", password:"", subjects:[] }); setShowForm(false);
+    } catch(e) { alert(e.message); }
+    setSaving(false);
+  }
+
+  async function saveSubjects() {
+    if (editSubjects.length === 0) { alert("Seleccioná al menos una materia"); return; }
+    setSaving(true);
+    try {
+      await updateUserProfile(editingTeacher.id, { subjects: editSubjects, subject: editSubjects[0] });
+      setTeachers(prev => prev.map(t => t.id === editingTeacher.id ? { ...t, subjects: editSubjects, subject: editSubjects[0] } : t));
+      setEditingTeacher(null);
+      alert("Materias actualizadas correctamente");
     } catch(e) { alert(e.message); }
     setSaving(false);
   }
@@ -300,8 +315,10 @@ function TeachersTab({ teachers, setTeachers, setSaving }) {
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px" }}>
         <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>Profesores ({teachers.length})</h2>
-        <button className="btn-primary" onClick={()=>setShowForm(!showForm)}>{showForm?"Cancelar":"+ Nuevo profesor"}</button>
+        <button className="btn-primary" onClick={()=>{ setShowForm(!showForm); setEditingTeacher(null); }}>{showForm?"Cancelar":"+ Nuevo profesor"}</button>
       </div>
+
+      {/* Formulario nuevo profesor */}
       {showForm && (
         <div className="card fade" style={{ padding:"24px", marginBottom:"20px", border:"2px solid #d1fae5" }}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"16px", marginBottom:"16px" }}>
@@ -318,6 +335,27 @@ function TeachersTab({ teachers, setTeachers, setSaving }) {
           <button className="btn-primary" onClick={addTeacher}>Guardar profesor</button>
         </div>
       )}
+
+      {/* Panel editar materias */}
+      {editingTeacher && (
+        <div className="card fade" style={{ padding:"24px", marginBottom:"20px", border:"2px solid #fde68a", background:"#fffbeb" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" }}>
+            <div>
+              <h3 style={{ margin:"0 0 2px", color:"#1e3a5f", fontFamily:"'Playfair Display',serif" }}>Editando materias: {editingTeacher.name}</h3>
+              <span style={{ fontSize:"0.82rem", color:"#64748b" }}>{editSubjects.length} materia(s) seleccionada(s)</span>
+            </div>
+            <button onClick={()=>setEditingTeacher(null)} style={{ padding:"6px 14px", borderRadius:"10px", border:"1px solid #e2e8f0", cursor:"pointer", background:"white", fontSize:"0.82rem" }}>Cancelar</button>
+          </div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:"8px", marginBottom:"16px" }}>
+            {SUBJECTS.map(s => (
+              <button key={s} onClick={()=>toggleEditSubject(s)} style={{ padding:"6px 12px", borderRadius:"20px", border:`2px solid ${editSubjects.includes(s)?"#065f46":"#e2e8f0"}`, background:editSubjects.includes(s)?"#d1fae5":"white", color:editSubjects.includes(s)?"#065f46":"#64748b", cursor:"pointer", fontSize:"0.8rem", fontWeight:600 }}>{s}</button>
+            ))}
+          </div>
+          <button className="btn-primary" onClick={saveSubjects}>Guardar materias</button>
+        </div>
+      )}
+
+      {/* Tabla de profesores */}
       <div className="card">
         <table style={{ width:"100%", borderCollapse:"collapse" }}>
           <thead><tr style={{ borderBottom:"2px solid #e2e8f0" }}>
@@ -327,11 +365,21 @@ function TeachersTab({ teachers, setTeachers, setSaving }) {
             {teachers.map(t => {
               const materias = t.subjects || (t.subject ? [t.subject] : []);
               return (
-                <tr key={t.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
+                <tr key={t.id} style={{ borderBottom:"1px solid #f1f5f9", background: editingTeacher?.id===t.id?"#fffbeb":"white" }}>
                   <td style={{ padding:"12px 16px", fontWeight:600 }}>{t.name}</td>
                   <td style={{ padding:"12px 16px", color:"#64748b", fontSize:"0.85rem" }}>{t.email}</td>
                   <td style={{ padding:"12px 16px" }}>{materias.map(m=><span key={m} className="badge" style={{ background:"#d1fae5", color:"#065f46", marginRight:"4px", marginBottom:"4px" }}>{m}</span>)}</td>
-                  <td style={{ padding:"12px 16px" }}><button className="btn-danger" onClick={()=>removeTeacher(t.id)}>Eliminar</button></td>
+                  <td style={{ padding:"12px 16px" }}>
+                    <div style={{ display:"flex", gap:"8px" }}>
+                      <button
+                        onClick={()=>{ setEditingTeacher(t); setEditSubjects(materias); setShowForm(false); }}
+                        style={{ padding:"5px 12px", borderRadius:"8px", border:"1px solid #065f46", background:"white", color:"#065f46", cursor:"pointer", fontSize:"0.8rem", fontWeight:600 }}
+                      >
+                        ✏️ Materias
+                      </button>
+                      <button className="btn-danger" onClick={()=>removeTeacher(t.id)}>Eliminar</button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
@@ -447,7 +495,6 @@ function ParentsTab({ setSaving }) {
   );
 }
 
-// ─── Notas lazy para el director ──────────────────────────────────
 function AllGradesTab({ setSaving }) {
   const [studentFilter, setStudentFilter] = useState(null);
   const [trimFilter, setTrimFilter] = useState(0);
@@ -471,8 +518,6 @@ function AllGradesTab({ setSaving }) {
   return (
     <div>
       <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 20px" }}>Evaluaciones</h2>
-
-      {/* Filtros de búsqueda */}
       <div className="card" style={{ padding:"24px", marginBottom:"20px" }}>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"20px", marginBottom:"16px" }}>
           <div>
@@ -483,9 +528,7 @@ function AllGradesTab({ setSaving }) {
                 <button onClick={()=>setStudentFilter(null)} style={{ fontSize:"0.78rem", color:"#dc2626", background:"none", border:"none", cursor:"pointer" }}>✕</button>
               </div>
             ) : (
-              <div style={{ marginTop:"6px" }}>
-                <StudentSearch buttonLabel="Seleccionar" onSelect={setStudentFilter} />
-              </div>
+              <div style={{ marginTop:"6px" }}><StudentSearch buttonLabel="Seleccionar" onSelect={setStudentFilter} /></div>
             )}
           </div>
           <div>
@@ -502,7 +545,6 @@ function AllGradesTab({ setSaving }) {
         </button>
         {!searched && <p style={{ color:"#94a3b8", fontSize:"0.82rem", marginTop:"10px", marginBottom:0 }}>Filtrá por alumno y/o trimestre y presioná Buscar.</p>}
       </div>
-
       {searched && results.length===0 && <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}><p>No se encontraron evaluaciones.</p></div>}
       {results.length > 0 && (
         <>
@@ -533,7 +575,6 @@ function AllGradesTab({ setSaving }) {
   );
 }
 
-// ─── Observaciones lazy ───────────────────────────────────────────
 function AllObservationsTab({ setSaving }) {
   const [studentFilter, setStudentFilter] = useState(null);
   const [teacherFilter, setTeacherFilter] = useState("");
