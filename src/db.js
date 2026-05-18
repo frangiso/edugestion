@@ -1,7 +1,7 @@
 import {
   collection, doc, getDoc, getDocs, addDoc, setDoc,
   updateDoc, deleteDoc, query, where, orderBy, serverTimestamp,
-  limit, startAfter
+  limit, startAfter, writeBatch
 } from "firebase/firestore";
 import {
   createUserWithEmailAndPassword,
@@ -23,14 +23,16 @@ const cache = {
   studentNames: {},
   teacherGradesLastDoc: {},
   teacherGradesAllLoaded: {},
-  // Próximas evaluaciones
-  upcomingByTeacher: {},      // { [teacherId_vigentes]: [...] }
-  upcomingPastByTeacher: {},  // { [teacherId_pasadas]: [...] } — solo si pide ver anteriores
-  upcomingFiltered: {},       // { [key]: [...] } — para tutor, clave = "grade_subject"
+  upcomingByTeacher: {},
+  upcomingPastByTeacher: {},
+  upcomingFiltered: {},
+  gradeTypes: {},   // { [teacherId]: [...tipos] }
 };
 
 const PAGE_SIZE = 20;
 const today = () => new Date().toISOString().split("T")[0];
+
+const DEFAULT_TYPES = ["Examen","Recuperatorio","Trabajo Práctico","Exposición","Proyecto","Parcial","Cuestionario","Otro"];
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
@@ -41,6 +43,35 @@ async function ensureStudentsLoaded() {
   cache.allStudents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   cache.allStudents.forEach(s => { cache.studentNames[s.id] = s.name; });
   return cache.allStudents;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TIPOS DE EVALUACIÓN PERSONALIZADOS
+// Guardados en users/{uid}.gradeTypes (array en el mismo doc del prof)
+// ═══════════════════════════════════════════════════════════════════
+export async function getGradeTypes(teacherId) {
+  if (cache.gradeTypes[teacherId]) return cache.gradeTypes[teacherId];
+  const snap = await getDoc(doc(db, "users", teacherId));
+  const custom = snap.exists() ? (snap.data().gradeTypes || []) : [];
+  // Combinar defaults + custom sin duplicados
+  const merged = [...DEFAULT_TYPES];
+  custom.forEach(t => { if (!merged.includes(t)) merged.push(t); });
+  cache.gradeTypes[teacherId] = merged;
+  return merged;
+}
+
+export async function addGradeType(teacherId, newType) {
+  const trimmed = newType.trim();
+  if (!trimmed) return;
+  const current = await getGradeTypes(teacherId);
+  if (current.includes(trimmed)) return; // ya existe
+  const updated = [...current, trimmed];
+  // Solo guardar los custom (sin los defaults) en Firestore
+  const customOnly = updated.filter(t => !DEFAULT_TYPES.includes(t));
+  await updateDoc(doc(db, "users", teacherId), { gradeTypes: customOnly });
+  cache.gradeTypes[teacherId] = updated;
+  cache.teachers = null; // invalidar para que recargue si es necesario
+  return updated;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -110,12 +141,8 @@ export async function resolveChildrenNames(childIds = [], tutorEmail = "") {
 
 export async function createUser(email, password, profileData) {
   let cred;
-  try {
-    cred = await createUserWithEmailAndPassword(auth, email, password);
-  } catch(e) {
-    if (e.code === 'auth/email-already-in-use') throw new Error("Este email ya está registrado. Usá otro email.");
-    throw e;
-  }
+  try { cred = await createUserWithEmailAndPassword(auth, email, password); }
+  catch(e) { if (e.code === 'auth/email-already-in-use') throw new Error("Este email ya está registrado. Usá otro email."); throw e; }
   await setDoc(doc(db, "users", cred.user.uid), { ...profileData, email, createdAt: serverTimestamp() });
   if (profileData.role === "parent" && cache.parents) cache.parents = [...cache.parents, { id: cred.user.uid, ...profileData, email }];
   if (profileData.role === "teacher") cache.teachers = null;
@@ -145,6 +172,11 @@ export async function searchStudents({ name = "", grade = "" } = {}) {
 }
 
 export async function getAllStudents() { return await ensureStudentsLoaded(); }
+
+export async function getStudentsByGrade(grade) {
+  const all = await ensureStudentsLoaded();
+  return all.filter(s => s.grade === grade).sort((a,b) => a.name.localeCompare(b.name));
+}
 
 export async function getChildrenByIds(childIds = [], tutorEmail = "") {
   const all = await ensureStudentsLoaded();
@@ -196,23 +228,23 @@ export async function searchGrades({ studentId = "", trimester = 0 } = {}) {
     return r;
   }
   let q;
-  if (studentId && trimester) q = query(collection(db, "grades"), where("studentId","==",studentId), where("trimester","==",trimester), orderBy("date","desc"));
-  else if (studentId) q = query(collection(db, "grades"), where("studentId","==",studentId), orderBy("date","desc"));
-  else if (trimester) q = query(collection(db, "grades"), where("trimester","==",trimester), orderBy("date","desc"));
-  else q = query(collection(db, "grades"), orderBy("date","desc"), limit(50));
+  if (studentId && trimester) q = query(collection(db,"grades"), where("studentId","==",studentId), where("trimester","==",trimester), orderBy("date","desc"));
+  else if (studentId) q = query(collection(db,"grades"), where("studentId","==",studentId), orderBy("date","desc"));
+  else if (trimester) q = query(collection(db,"grades"), where("trimester","==",trimester), orderBy("date","desc"));
+  else q = query(collection(db,"grades"), orderBy("date","desc"), limit(50));
   const snap = await getDocs(q);
-  const results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const results = snap.docs.map(d => ({ id:d.id, ...d.data() }));
   if (studentId && !trimester) cache.studentGrades[studentId] = results;
   return results;
 }
 
 export async function getGradesStats() {
   if (cache.grades) {
-    return { total: cache.grades.length, byTrimester: [1,2,3].map(t => { const tg = cache.grades.filter(g=>g.trimester===t); return { t, count: tg.length, avg: tg.length>0?(tg.reduce((a,g)=>a+g.score,0)/tg.length).toFixed(1):"–" }; }) };
+    return { total: cache.grades.length, byTrimester: [1,2,3].map(t => { const tg = cache.grades.filter(g=>g.trimester===t); return { t, count:tg.length, avg: tg.length>0?(tg.reduce((a,g)=>a+g.score,0)/tg.length).toFixed(1):"–" }; }) };
   }
-  const snap = await getDocs(query(collection(db, "grades"), orderBy("date","desc"), limit(200)));
-  const grades = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  return { total: grades.length, byTrimester: [1,2,3].map(t => { const tg = grades.filter(g=>g.trimester===t); return { t, count: tg.length, avg: tg.length>0?(tg.reduce((a,g)=>a+g.score,0)/tg.length).toFixed(1):"–" }; }) };
+  const snap = await getDocs(query(collection(db,"grades"), orderBy("date","desc"), limit(200)));
+  const grades = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+  return { total: grades.length, byTrimester: [1,2,3].map(t => { const tg = grades.filter(g=>g.trimester===t); return { t, count:tg.length, avg: tg.length>0?(tg.reduce((a,g)=>a+g.score,0)/tg.length).toFixed(1):"–" }; }) };
 }
 
 export async function getGradesByTeacherPaged(teacherId) {
@@ -268,6 +300,7 @@ export async function getGradesByStudentFiltered(studentId, { subject="", trimes
   return results;
 }
 
+// Guardar una sola nota
 export async function createGrade(data) {
   const ref = await addDoc(collection(db,"grades"), { ...data, createdAt: serverTimestamp() });
   const newGrade = { id:ref.id, ...data };
@@ -275,6 +308,34 @@ export async function createGrade(data) {
   if (data.teacherId) { if (!cache.teacherGrades[data.teacherId]) cache.teacherGrades[data.teacherId]=[]; cache.teacherGrades[data.teacherId]=[newGrade,...cache.teacherGrades[data.teacherId]]; }
   if (data.studentId) { if (!cache.studentGrades[data.studentId]) cache.studentGrades[data.studentId]=[]; cache.studentGrades[data.studentId]=[newGrade,...cache.studentGrades[data.studentId]]; }
   return ref.id;
+}
+
+// Guardar múltiples notas de una vez (carga masiva por curso)
+// Usa batch para minimizar escrituras — 1 batch por cada 500 docs (Firestore limit)
+export async function createGradesBatch(gradesData) {
+  const BATCH_LIMIT = 499;
+  const chunks = [];
+  for (let i = 0; i < gradesData.length; i += BATCH_LIMIT) {
+    chunks.push(gradesData.slice(i, i + BATCH_LIMIT));
+  }
+  const allNew = [];
+  for (const chunk of chunks) {
+    const batch = writeBatch(db);
+    const newDocs = chunk.map(data => {
+      const ref = doc(collection(db, "grades"));
+      batch.set(ref, { ...data, createdAt: serverTimestamp() });
+      return { id: ref.id, ...data };
+    });
+    await batch.commit();
+    allNew.push(...newDocs);
+  }
+  // Actualizar caché
+  allNew.forEach(newGrade => {
+    if (cache.grades) cache.grades = [newGrade, ...cache.grades];
+    if (newGrade.teacherId) { if (!cache.teacherGrades[newGrade.teacherId]) cache.teacherGrades[newGrade.teacherId]=[]; cache.teacherGrades[newGrade.teacherId]=[newGrade,...cache.teacherGrades[newGrade.teacherId]]; }
+    if (newGrade.studentId) { if (!cache.studentGrades[newGrade.studentId]) cache.studentGrades[newGrade.studentId]=[]; cache.studentGrades[newGrade.studentId]=[newGrade,...cache.studentGrades[newGrade.studentId]]; }
+  });
+  return allNew;
 }
 
 export async function deleteGrade(id) {
@@ -337,93 +398,59 @@ export async function deleteObservation(id) {
 
 // ═══════════════════════════════════════════════════════════════════
 // PRÓXIMAS EVALUACIONES
-// Colección: upcoming
-// Campos: teacherId, teacherName, subject, grade, title, type,
-//         dateStart, dateEnd, trimester, description, createdAt
 // ═══════════════════════════════════════════════════════════════════
-
-// PROFESOR — solo vigentes (dateEnd >= hoy). Pasadas solo si las pide.
 export async function getUpcomingByTeacher(teacherId) {
   const key = `${teacherId}_vigentes`;
   if (cache.upcomingByTeacher[key]) return cache.upcomingByTeacher[key];
-  const snap = await getDocs(query(
-    collection(db, "upcoming"),
-    where("teacherId", "==", teacherId),
-    where("dateEnd", ">=", today()),
-    orderBy("dateEnd", "asc")
-  ));
-  const results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const snap = await getDocs(query(collection(db,"upcoming"), where("teacherId","==",teacherId), where("dateEnd",">=",today()), orderBy("dateEnd","asc")));
+  const results = snap.docs.map(d => ({ id:d.id, ...d.data() }));
   cache.upcomingByTeacher[key] = results;
   return results;
 }
 
-// PROFESOR — pasadas, solo cuando hace clic en "Ver anteriores"
 export async function getUpcomingPastByTeacher(teacherId) {
   const key = `${teacherId}_pasadas`;
   if (cache.upcomingPastByTeacher[key]) return cache.upcomingPastByTeacher[key];
-  const snap = await getDocs(query(
-    collection(db, "upcoming"),
-    where("teacherId", "==", teacherId),
-    where("dateEnd", "<", today()),
-    orderBy("dateEnd", "desc"),
-    limit(20)  // máximo 20 pasadas — suficiente
-  ));
-  const results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const snap = await getDocs(query(collection(db,"upcoming"), where("teacherId","==",teacherId), where("dateEnd","<",today()), orderBy("dateEnd","desc"), limit(20)));
+  const results = snap.docs.map(d => ({ id:d.id, ...d.data() }));
   cache.upcomingPastByTeacher[key] = results;
   return results;
 }
 
-// TUTOR — busca por año del hijo y opcionalmente materia. Solo vigentes.
-// Clave de caché = grade + subject para no releer si busca lo mismo
-export async function getUpcomingFiltered({ grade = "", subject = "" } = {}) {
+export async function getUpcomingFiltered({ grade="", subject="" }={}) {
   const cacheKey = `${grade}_${subject}`;
   if (cache.upcomingFiltered[cacheKey]) return cache.upcomingFiltered[cacheKey];
-
-  const conditions = [where("dateEnd", ">=", today())];
-  // Firestore no permite múltiples campos con inequality en la misma query,
-  // así que filtramos grade en memoria si hace falta
-  if (subject) conditions.push(where("subject", "==", subject));
-
-  const snap = await getDocs(query(
-    collection(db, "upcoming"),
-    ...conditions,
-    orderBy("dateEnd", "asc")
-  ));
-  let results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-  // Filtrar por año en memoria (no se puede combinar con dateEnd >= en Firestore sin índice compuesto)
-  if (grade) results = results.filter(u => !u.grade || u.grade === "" || u.grade === grade);
-
+  const conditions = [where("dateEnd",">=",today())];
+  if (subject) conditions.push(where("subject","==",subject));
+  const snap = await getDocs(query(collection(db,"upcoming"), ...conditions, orderBy("dateEnd","asc")));
+  let results = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+  if (grade) results = results.filter(u => !u.grade || u.grade==="" || u.grade===grade);
   cache.upcomingFiltered[cacheKey] = results;
   return results;
 }
 
 export async function createUpcoming(data) {
-  const ref = await addDoc(collection(db, "upcoming"), { ...data, createdAt: serverTimestamp() });
-  const newItem = { id: ref.id, ...data };
-  // Agregar a caché de vigentes del profesor
+  const ref = await addDoc(collection(db,"upcoming"), { ...data, createdAt: serverTimestamp() });
+  const newItem = { id:ref.id, ...data };
   const key = `${data.teacherId}_vigentes`;
-  if (cache.upcomingByTeacher[key]) {
-    cache.upcomingByTeacher[key] = [...cache.upcomingByTeacher[key], newItem].sort((a,b)=>a.dateEnd.localeCompare(b.dateEnd));
-  }
-  // Invalidar caché de tutores — ya que hay nueva evaluación
+  if (cache.upcomingByTeacher[key]) cache.upcomingByTeacher[key] = [...cache.upcomingByTeacher[key], newItem].sort((a,b)=>a.dateEnd.localeCompare(b.dateEnd));
   cache.upcomingFiltered = {};
   return ref.id;
 }
 
 export async function deleteUpcoming(id, teacherId) {
-  await deleteDoc(doc(db, "upcoming", id));
-  const vk = `${teacherId}_vigentes`, pk = `${teacherId}_pasadas`;
-  if (cache.upcomingByTeacher[vk]) cache.upcomingByTeacher[vk] = cache.upcomingByTeacher[vk].filter(u=>u.id!==id);
-  if (cache.upcomingPastByTeacher[pk]) cache.upcomingPastByTeacher[pk] = cache.upcomingPastByTeacher[pk].filter(u=>u.id!==id);
+  await deleteDoc(doc(db,"upcoming",id));
+  const vk=`${teacherId}_vigentes`, pk=`${teacherId}_pasadas`;
+  if (cache.upcomingByTeacher[vk]) cache.upcomingByTeacher[vk]=cache.upcomingByTeacher[vk].filter(u=>u.id!==id);
+  if (cache.upcomingPastByTeacher[pk]) cache.upcomingPastByTeacher[pk]=cache.upcomingPastByTeacher[pk].filter(u=>u.id!==id);
   cache.upcomingFiltered = {};
 }
 
 export async function updateUpcoming(id, teacherId, data) {
-  await updateDoc(doc(db, "upcoming", id), data);
-  const vk = `${teacherId}_vigentes`, pk = `${teacherId}_pasadas`;
-  if (cache.upcomingByTeacher[vk]) cache.upcomingByTeacher[vk] = cache.upcomingByTeacher[vk].map(u=>u.id===id?{...u,...data}:u);
-  if (cache.upcomingPastByTeacher[pk]) cache.upcomingPastByTeacher[pk] = cache.upcomingPastByTeacher[pk].map(u=>u.id===id?{...u,...data}:u);
+  await updateDoc(doc(db,"upcoming",id), data);
+  const vk=`${teacherId}_vigentes`, pk=`${teacherId}_pasadas`;
+  if (cache.upcomingByTeacher[vk]) cache.upcomingByTeacher[vk]=cache.upcomingByTeacher[vk].map(u=>u.id===id?{...u,...data}:u);
+  if (cache.upcomingPastByTeacher[pk]) cache.upcomingPastByTeacher[pk]=cache.upcomingPastByTeacher[pk].map(u=>u.id===id?{...u,...data}:u);
   cache.upcomingFiltered = {};
 }
 
