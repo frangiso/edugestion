@@ -164,6 +164,8 @@ export async function deleteUserProfile(uid) {
 // ALUMNOS
 // ═══════════════════════════════════════════════════════════════════
 export async function searchStudents({ name = "", grade = "" } = {}) {
+  // Si busca solo por año, ir directo a Firestore para garantizar todos los alumnos
+  if (grade && !name) return await getStudentsByGrade(grade);
   const all = await ensureStudentsLoaded();
   let results = all;
   if (name) results = results.filter(s => s.name.toLowerCase().includes(name.toLowerCase()));
@@ -174,8 +176,23 @@ export async function searchStudents({ name = "", grade = "" } = {}) {
 export async function getAllStudents() { return await ensureStudentsLoaded(); }
 
 export async function getStudentsByGrade(grade) {
-  const all = await ensureStudentsLoaded();
-  return all.filter(s => s.grade === grade).sort((a,b) => a.name.localeCompare(b.name));
+  // Lee siempre directo de Firestore para garantizar todos los alumnos del curso
+  const snap = await getDocs(query(
+    collection(db, "students"),
+    where("grade", "==", grade),
+    orderBy("name")
+  ));
+  const results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  // Actualizar caché global con los datos frescos
+  if (cache.allStudents) {
+    results.forEach(s => {
+      const idx = cache.allStudents.findIndex(x => x.id === s.id);
+      if (idx !== -1) cache.allStudents[idx] = s;
+      else cache.allStudents.push(s);
+    });
+    cache.allStudents.sort((a,b) => a.name.localeCompare(b.name));
+  }
+  return results;
 }
 
 export async function getChildrenByIds(childIds = [], tutorEmail = "") {
