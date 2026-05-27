@@ -387,6 +387,16 @@ export async function deleteAttitude(id, teacherId, studentId) {
   await deleteDoc(doc(db,"attitudes",id));
   if (cache.attitudesByTeacher[teacherId]) cache.attitudesByTeacher[teacherId] = cache.attitudesByTeacher[teacherId].filter(a=>a.id!==id);
   if (cache.attitudesByStudent[studentId]) cache.attitudesByStudent[studentId] = cache.attitudesByStudent[studentId].filter(a=>a.id!==id);
+  allAttitudesCache = null;
+}
+
+// Trae TODAS las actitudinales (para el export del director)
+let allAttitudesCache = null;
+export async function getAllAttitudes() {
+  if (allAttitudesCache) return allAttitudesCache;
+  const snap = await getDocs(query(collection(db,"attitudes"), orderBy("studentId")));
+  allAttitudesCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return allAttitudesCache;
 }
 
 // ═══════════════════════════════════════════════════════════════════
