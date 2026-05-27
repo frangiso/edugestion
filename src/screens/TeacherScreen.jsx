@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor } from "../components";
 import {
   searchStudents, getStudentsByGrade,
-  getGradesByTeacherPaged, getMoreGradesByTeacher, getGradesByStudent,
+  getGradesByTeacherPaged, getMoreGradesByTeacher, getGradesByStudent, getAllGradesByTeacher,
   createGrade, createGradesBatch, deleteGrade,
   getGradeTypes, addGradeType,
   getObservationsByTeacher, createObservation, deleteObservation,
@@ -814,8 +814,10 @@ function StudentGradesTab({ user, subject }) {
     setSelectedStudent(s);
     setSearchResults([]);
     setLoadingGrades(true);
-    const grades = await getGradesByStudent(s.id);
-    setAllGrades(grades);
+    // getAllGradesByTeacher trae TODAS las notas del profe sin paginación
+    // y las filtramos localmente por alumno — garantiza que aparecen todas
+    const teacherGrades = await getAllGradesByTeacher(user.uid);
+    setAllGrades(teacherGrades);
     setLoadingGrades(false);
   }
 
@@ -827,9 +829,9 @@ function StudentGradesTab({ user, subject }) {
     setSearchResults([]);
   }
 
-  // Solo las notas que puso ESTE profe en SU materia activa
+  // Filtrar: notas de ESTE alumno en la materia activa
   const myGrades = allGrades.filter(
-    g => g.teacherId === user.uid && g.subject === subject
+    g => g.studentId === selectedStudent?.id && g.subject === subject
   );
 
   // Agrupar por trimestre
