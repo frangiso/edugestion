@@ -195,6 +195,20 @@ export async function getAllGrades() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// Trae TODAS las notas de un profe sin paginación (para "Ver alumno")
+export async function getAllGradesByTeacher(teacherId) {
+  const cacheKey = `all_${teacherId}`;
+  if (cache.teacherGrades[cacheKey]) return cache.teacherGrades[cacheKey];
+  const snap = await getDocs(query(
+    collection(db, "grades"),
+    where("teacherId", "==", teacherId),
+    orderBy("date", "desc")
+  ));
+  const results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  cache.teacherGrades[cacheKey] = results;
+  return results;
+}
+
 export async function searchGrades({ studentId = "", trimester = 0 } = {}) {
   if (studentId && cache.studentGrades[studentId]) {
     let r = cache.studentGrades[studentId];
