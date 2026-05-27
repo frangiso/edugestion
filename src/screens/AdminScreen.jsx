@@ -31,17 +31,38 @@ function calcAttSummary(atts, trimNum) {
 export default function AdminScreen({ user, profile, logout }) {
   const [tab, setTab] = useState("overview");
   const [teachers, setTeachers] = useState([]);
-  const [grades, setGrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { loadAll(); }, []);
+  // ── Lazy: grades solo se carga al abrir la pestaña "Notas" ──
+  const [grades, setGrades] = useState([]);
+  const [gradesLoaded, setGradesLoaded] = useState(false);
+  const [gradesLoading, setGradesLoading] = useState(false);
 
-  async function loadAll() {
+  // Al montar: solo carga profesores (sin getAllGrades)
+  useEffect(() => { loadInitial(); }, []);
+
+  async function loadInitial() {
     setLoading(true);
-    const [t, g] = await Promise.all([getAllTeachers(), getAllGrades()]);
-    setTeachers(t); setGrades(g);
+    const t = await getAllTeachers();
+    setTeachers(t);
     setLoading(false);
+  }
+
+  // Carga lazy de notas (solo la primera vez que se abre la pestaña)
+  async function ensureGradesLoaded() {
+    if (gradesLoaded) return;
+    setGradesLoading(true);
+    const g = await getAllGrades();
+    setGrades(g);
+    setGradesLoaded(true);
+    setGradesLoading(false);
+  }
+
+  // Cambio de pestaña con lazy loading de notas
+  function handleTabChange(newTab) {
+    setTab(newTab);
+    if (newTab === "allgrades" || newTab === "overview") ensureGradesLoaded();
   }
 
   return (
@@ -59,18 +80,18 @@ export default function AdminScreen({ user, profile, logout }) {
             ["attitudes","🎯 Actitudinales"],
             ["allobservations","💬 Observaciones"],
           ].map(([k,l]) => (
-            <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>setTab(k)}>{l}</button>
+            <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
           ))}
         </div>
         {loading ? (
           <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando datos...</div>
         ) : (
           <div className="fade" key={tab}>
-            {tab === "overview"        && <Overview grades={grades} teachers={teachers} />}
+            {tab === "overview"        && <Overview grades={grades} teachers={teachers} gradesLoaded={gradesLoaded} gradesLoading={gradesLoading} />}
             {tab === "students"        && <StudentsTab setSaving={setSaving} />}
             {tab === "teachers"        && <TeachersTab teachers={teachers} setTeachers={setTeachers} setSaving={setSaving} />}
             {tab === "parents"         && <ParentsTab setSaving={setSaving} />}
-            {tab === "allgrades"       && <AllGradesTab grades={grades} setGrades={setGrades} setSaving={setSaving} />}
+            {tab === "allgrades"       && <AllGradesTab grades={grades} setGrades={setGrades} setSaving={setSaving} loaded={gradesLoaded} loading={gradesLoading} />}
             {tab === "attitudes"       && <AllAttitudesTab />}
             {tab === "allobservations" && <AllObservationsTab />}
           </div>
@@ -82,12 +103,13 @@ export default function AdminScreen({ user, profile, logout }) {
 
 // ════════════════════════════════════════════════════════════════════
 // RESUMEN
+// Muestra datos de profesores siempre; notas solo cuando ya cargaron
 // ════════════════════════════════════════════════════════════════════
-function Overview({ grades, teachers }) {
-  const globalAvg = avg(grades.map(g => g.score));
+function Overview({ grades, teachers, gradesLoaded, gradesLoading }) {
+  const globalAvg = gradesLoaded ? avg(grades.map(g => g.score)) : "–";
   const cards = [
     { icon:"👨‍🏫", label:"Profesores", value: teachers.length, color:"#065f46" },
-    { icon:"📝", label:"Evaluaciones", value: grades.length, color:"#4c1d95" },
+    { icon:"📝", label:"Evaluaciones", value: gradesLoaded ? grades.length : "–", color:"#4c1d95" },
     { icon:"⭐", label:"Promedio global", value: globalAvg, color:"#92400e" },
   ];
   return (
@@ -104,22 +126,28 @@ function Overview({ grades, teachers }) {
       </div>
       <div className="card" style={{ padding:"24px" }}>
         <h3 style={{ margin:"0 0 16px", color:"#1e3a5f", fontFamily:"'Playfair Display',serif", fontSize:"1.1rem" }}>Notas por trimestre</h3>
-        {[1,2,3].map(t => {
-          const tg = grades.filter(g => g.trimester === t);
-          const ta = avg(tg.map(g => g.score));
-          return (
-            <div key={t} style={{ marginBottom:"12px" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"4px" }}>
-                <span style={{ fontSize:"0.85rem", color:"#475569" }}>{trimNames[t-1]}</span>
-                <span style={{ fontWeight:700, color: ta==="–"?"#94a3b8":scoreColor(parseFloat(ta)) }}>{ta}</span>
+        {gradesLoading ? (
+          <div style={{ textAlign:"center", padding:"20px", color:"#94a3b8", fontSize:"0.9rem" }}>Cargando estadísticas...</div>
+        ) : !gradesLoaded ? (
+          <div style={{ textAlign:"center", padding:"20px", color:"#94a3b8", fontSize:"0.9rem" }}>Abrí la pestaña 📋 Notas para cargar las estadísticas</div>
+        ) : (
+          [1,2,3].map(t => {
+            const tg = grades.filter(g => g.trimester === t);
+            const ta = avg(tg.map(g => g.score));
+            return (
+              <div key={t} style={{ marginBottom:"12px" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"4px" }}>
+                  <span style={{ fontSize:"0.85rem", color:"#475569" }}>{trimNames[t-1]}</span>
+                  <span style={{ fontWeight:700, color: ta==="–"?"#94a3b8":scoreColor(parseFloat(ta)) }}>{ta}</span>
+                </div>
+                <div style={{ height:"6px", background:"#e2e8f0", borderRadius:"3px", overflow:"hidden" }}>
+                  <div style={{ height:"100%", width: ta==="–"?"0":`${parseFloat(ta)*10}%`, background: ta==="–"?"#e2e8f0":scoreColor(parseFloat(ta)), borderRadius:"3px" }} />
+                </div>
+                <div style={{ fontSize:"0.75rem", color:"#94a3b8", marginTop:"2px" }}>{tg.length} evaluaciones</div>
               </div>
-              <div style={{ height:"6px", background:"#e2e8f0", borderRadius:"3px", overflow:"hidden" }}>
-                <div style={{ height:"100%", width: ta==="–"?"0":`${parseFloat(ta)*10}%`, background: ta==="–"?"#e2e8f0":scoreColor(parseFloat(ta)), borderRadius:"3px" }} />
-              </div>
-              <div style={{ fontSize:"0.75rem", color:"#94a3b8", marginTop:"2px" }}>{tg.length} evaluaciones</div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </div>
   );
@@ -312,7 +340,7 @@ function TeachersTab({ teachers, setTeachers, setSaving }) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// TUTORES (lazy)
+// TUTORES
 // ════════════════════════════════════════════════════════════════════
 function ParentsTab({ setSaving }) {
   const [showForm, setShowForm] = useState(false);
@@ -385,13 +413,18 @@ function ParentsTab({ setSaving }) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// TODAS LAS NOTAS
+// TODAS LAS NOTAS — lazy: recibe loaded/loading del padre
 // ════════════════════════════════════════════════════════════════════
-function AllGradesTab({ grades, setGrades, setSaving }) {
+function AllGradesTab({ grades, setGrades, setSaving, loaded, loading }) {
   const [trim, setTrim] = useState(0);
   const [studentFilter, setStudentFilter] = useState(null);
   const filtered = grades.filter(g=>trim===0||g.trimester===trim).filter(g=>!studentFilter||g.studentId===studentFilter.id);
   async function removeGrade(id){setSaving(true);await deleteGrade(id);setGrades(prev=>prev.filter(g=>g.id!==id));setSaving(false);}
+
+  if (loading) {
+    return <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando evaluaciones...</div>;
+  }
+
   return (
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" }}>
@@ -431,14 +464,12 @@ function AllGradesTab({ grades, setGrades, setSaving }) {
 
 // ════════════════════════════════════════════════════════════════════
 // 🎯 ACTITUDINALES — VISTA DEL DIRECTOR
-// Busca alumno → muestra qué puso cada profe por materia y trimestre
-// + promedio final del alumno por trimestre
 // ════════════════════════════════════════════════════════════════════
 function AllAttitudesTab() {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [attitudes, setAttitudes] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [selectedTrim, setSelectedTrim] = useState(0); // 0 = todos
+  const [selectedTrim, setSelectedTrim] = useState(0);
 
   async function selectStudent(s) {
     setSelectedStudent(s);
@@ -448,10 +479,8 @@ function AllAttitudesTab() {
     setLoading(false);
   }
 
-  // Filtra por trimestre si está seleccionado
   const attFiltered = selectedTrim ? attitudes.filter(a => a.trimester === selectedTrim) : attitudes;
 
-  // Agrupa por trimestre → por materia
   function getByTrimSubject(triNum) {
     const attTrim = attitudes.filter(a => a.trimester === triNum);
     const bySubject = {};
@@ -520,7 +549,6 @@ function AllAttitudesTab() {
 
                 return (
                   <div key={triNum} style={{ marginBottom:"32px" }}>
-                    {/* Encabezado del trimestre con promedio */}
                     <div className="card" style={{ padding:"20px 24px", marginBottom:"16px", background:"#1e3a5f", borderRadius:"16px" }}>
                       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:"12px" }}>
                         <h3 style={{ fontFamily:"'Playfair Display',serif", color:"white", margin:0, fontSize:"1.15rem" }}>
@@ -536,7 +564,6 @@ function AllAttitudesTab() {
                                 Escala numérica: {summary.numAvg} / 4.00
                               </div>
                             </div>
-                            {/* Badge grande con el valor promedio */}
                             <div style={{ background:`${ATTITUDE_COLORS[summary.value]}25`, border:`3px solid ${ATTITUDE_COLORS[summary.value]}`, borderRadius:"14px", padding:"10px 20px", textAlign:"center", minWidth:"100px" }}>
                               <div style={{ fontWeight:800, color:ATTITUDE_COLORS[summary.value], fontSize:"1.6rem", fontFamily:"'Playfair Display',serif" }}>
                                 {summary.value}
@@ -553,22 +580,18 @@ function AllAttitudesTab() {
                     {/* Detalle por materia */}
                     <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:"14px" }}>
                       {Object.entries(bySubject).map(([subject, atts]) => {
-                        // Promedio de esta materia
                         const nums = atts.map(a=>ATTITUDE_NUM[a.value]).filter(Boolean);
                         const subNumAvg = nums.reduce((a,b)=>a+b,0)/nums.length;
                         const subVal = numToAttitude(subNumAvg);
 
                         return (
                           <div key={subject} className="card" style={{ padding:"18px 20px", borderTop:`4px solid ${ATTITUDE_COLORS[subVal]}` }}>
-                            {/* Materia + promedio de la materia */}
                             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"12px" }}>
                               <div style={{ fontWeight:700, color:"#1e293b", fontSize:"0.95rem", flex:1, paddingRight:"8px" }}>{subject}</div>
                               <span style={{ padding:"4px 12px", borderRadius:"20px", background:`${ATTITUDE_COLORS[subVal]}15`, border:`2px solid ${ATTITUDE_COLORS[subVal]}`, fontWeight:800, color:ATTITUDE_COLORS[subVal], fontSize:"0.88rem", whiteSpace:"nowrap" }}>
                                 {subVal}
                               </span>
                             </div>
-
-                            {/* Fila por cada profesor */}
                             <div style={{ display:"flex", flexDirection:"column", gap:"6px" }}>
                               {atts.map((a, i) => (
                                 <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 10px", background:"#f8fafc", borderRadius:"8px" }}>
@@ -582,8 +605,6 @@ function AllAttitudesTab() {
                                 </div>
                               ))}
                             </div>
-
-                            {/* Si hay más de un prof, muestra promedio de la materia */}
                             {atts.length > 1 && (
                               <div style={{ marginTop:"10px", display:"flex", justifyContent:"space-between", alignItems:"center", paddingTop:"8px", borderTop:"1px solid #e2e8f0" }}>
                                 <span style={{ fontSize:"0.75rem", color:"#94a3b8" }}>Promedio {atts.length} profesores</span>

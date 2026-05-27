@@ -27,28 +27,53 @@ export default function TeacherScreen({ user, profile, logout }) {
   const [tab, setTab] = useState("add");
   const [grades, setGrades] = useState([]);
   const [gradeTypes, setGradeTypes] = useState([]);
-  const [attitudes, setAttitudes] = useState([]);
-  const [observations, setObservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [hasMore, setHasMore] = useState(false);
 
+  // ── Lazy: actitudinales y observaciones se cargan solo cuando se abre la pestaña ──
+  const [attitudes, setAttitudes] = useState([]);
+  const [attitudesLoaded, setAttitudesLoaded] = useState(false);
+  const [observations, setObservations] = useState([]);
+  const [observationsLoaded, setObservationsLoaded] = useState(false);
+
   const subjects = profile.subjects || (profile.subject ? [profile.subject] : []);
   const [selectedSubject, setSelectedSubject] = useState(subjects[0] || "");
 
-  useEffect(() => { loadAll(); }, []);
+  // Al montar: solo carga notas y tipos (sin actitudinales ni observaciones)
+  useEffect(() => { loadInitial(); }, []);
 
-  async function loadAll() {
+  async function loadInitial() {
     setLoading(true);
-    const [{ grades: g, hasMore: hm }, types, att, obs] = await Promise.all([
+    const [{ grades: g, hasMore: hm }, types] = await Promise.all([
       getGradesByTeacherPaged(user.uid),
       getGradeTypes(user.uid),
-      getAttitudesByTeacher(user.uid),
-      getObservationsByTeacher(user.uid),
     ]);
     setGrades(g); setHasMore(hm); setGradeTypes(types);
-    setAttitudes(att); setObservations(obs);
     setLoading(false);
+  }
+
+  // Carga lazy de actitudinales (solo la primera vez que se abre la pestaña)
+  async function ensureAttitudesLoaded() {
+    if (attitudesLoaded) return;
+    const att = await getAttitudesByTeacher(user.uid);
+    setAttitudes(att);
+    setAttitudesLoaded(true);
+  }
+
+  // Carga lazy de observaciones (solo la primera vez que se abre la pestaña)
+  async function ensureObservationsLoaded() {
+    if (observationsLoaded) return;
+    const obs = await getObservationsByTeacher(user.uid);
+    setObservations(obs);
+    setObservationsLoaded(true);
+  }
+
+  // Manejo de cambio de pestaña con lazy loading
+  function handleTabChange(newTab) {
+    setTab(newTab);
+    if (newTab === "attitudes") ensureAttitudesLoaded();
+    if (newTab === "observations") ensureObservationsLoaded();
   }
 
   async function loadMore() {
@@ -83,7 +108,7 @@ export default function TeacherScreen({ user, profile, logout }) {
             ["upcoming","📅 Próximas eval."],
             ["ranking","📊 Rendimiento"],
           ].map(([k,l])=>(
-            <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>setTab(k)}>{l}</button>
+            <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
           ))}
         </div>
 
@@ -91,8 +116,8 @@ export default function TeacherScreen({ user, profile, logout }) {
           <div className="fade" key={tab}>
             {tab==="add"          && <AddGrade user={user} subject={selectedSubject} grades={grades} setGrades={setGrades} gradeTypes={gradeTypes} setGradeTypes={setGradeTypes} setSaving={setSaving} profile={profile} />}
             {tab==="mygrades"     && <MyGrades grades={grades} setGrades={setGrades} setSaving={setSaving} hasMore={hasMore} loadMore={loadMore} />}
-            {tab==="attitudes"    && <AttitudesTab user={user} profile={profile} subject={selectedSubject} attitudes={attitudes} setAttitudes={setAttitudes} setSaving={setSaving} />}
-            {tab==="observations" && <ObservationsTab user={user} profile={profile} observations={observations} setObservations={setObservations} setSaving={setSaving} />}
+            {tab==="attitudes"    && <AttitudesTab user={user} profile={profile} subject={selectedSubject} attitudes={attitudes} setAttitudes={setAttitudes} setSaving={setSaving} loaded={attitudesLoaded} />}
+            {tab==="observations" && <ObservationsTab user={user} profile={profile} observations={observations} setObservations={setObservations} setSaving={setSaving} loaded={observationsLoaded} />}
             {tab==="upcoming"     && <UpcomingTab user={user} profile={profile} subject={selectedSubject} setSaving={setSaving} />}
             {tab==="ranking"      && <Ranking grades={grades} subject={selectedSubject} />}
           </div>
@@ -356,8 +381,9 @@ function MyGrades({ grades, setGrades, setSaving, hasMore, loadMore }) {
 
 // ═══════════════════════════════════════════════════════════════════
 // ACTITUDINALES — carga individual y masiva
+// Recibe `loaded` para mostrar spinner mientras carga la primera vez
 // ═══════════════════════════════════════════════════════════════════
-function AttitudesTab({ user, profile, subject, attitudes, setAttitudes, setSaving }) {
+function AttitudesTab({ user, profile, subject, attitudes, setAttitudes, setSaving, loaded }) {
   const [mode, setMode] = useState("individual"); // individual | bulk
   const [trim, setTrim] = useState(1);
   const [success, setSuccess] = useState("");
@@ -370,6 +396,11 @@ function AttitudesTab({ user, profile, subject, attitudes, setAttitudes, setSavi
   // --- Bulk ---
   const [bulkGrade, setBulkGrade] = useState(""); const [bulkStudents, setBulkStudents] = useState([]); const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkValues, setBulkValues] = useState({}); // { [studentId]: "PD"|"DB"|"DM"|"DA" }
+
+  // Spinner mientras carga por primera vez
+  if (!loaded) {
+    return <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando actitudinales...</div>;
+  }
 
   async function doSearch() { if (!nameQ&&!gradeQ) return; setSearching(true); const r = await searchStudents({name:nameQ,grade:gradeQ}); setSearchResults(r); setSearching(false); }
 
@@ -442,7 +473,7 @@ function AttitudesTab({ user, profile, subject, attitudes, setAttitudes, setSavi
         <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>Actitudinales · <span style={{ color:"#065f46" }}>{subject}</span></h2>
         <div style={{ display:"flex", gap:"8px" }}>
           {[["individual","👤 Individual"],["bulk","👥 Masiva por curso"]].map(([m,l])=>(
-            <button key={m} onClick={()=>setMode(m)} style={{ padding:"8px 16px", borderRadius:"20px", border:`2px solid ${mode===m?"#1e3a5f":"#e2e8f0"}`, background:mode===m?"#1e3a5f":"white", color:mode===m?"white":"#64748b", cursor:"pointer", fontSize:"0.82rem", fontWeight:600 }}>{m===mode?l:l}</button>
+            <button key={m} onClick={()=>setMode(m)} style={{ padding:"8px 16px", borderRadius:"20px", border:`2px solid ${mode===m?"#1e3a5f":"#e2e8f0"}`, background:mode===m?"#1e3a5f":"white", color:mode===m?"white":"#64748b", cursor:"pointer", fontSize:"0.82rem", fontWeight:600 }}>{l}</button>
           ))}
         </div>
       </div>
@@ -571,12 +602,19 @@ function AttitudesTab({ user, profile, subject, attitudes, setAttitudes, setSavi
 
 // ═══════════════════════════════════════════════════════════════════
 // OBSERVACIONES
+// Recibe `loaded` para mostrar spinner mientras carga la primera vez
 // ═══════════════════════════════════════════════════════════════════
-function ObservationsTab({ user, profile, observations, setObservations, setSaving }) {
+function ObservationsTab({ user, profile, observations, setObservations, setSaving, loaded }) {
   const subjects = profile.subjects || (profile.subject ? [profile.subject] : []);
   const [nameQ, setNameQ] = useState(""); const [gradeQ, setGradeQ] = useState(""); const [searchResults, setSearchResults] = useState([]); const [searching, setSearching] = useState(false); const [selectedStudent, setSelectedStudent] = useState(null);
   const [form, setForm] = useState({ text:"", date:new Date().toISOString().split("T")[0] });
   const [success, setSuccess] = useState(false); const [nameFilter, setNameFilter] = useState("");
+
+  // Spinner mientras carga por primera vez
+  if (!loaded) {
+    return <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando observaciones...</div>;
+  }
+
   async function doSearch() { if (!nameQ&&!gradeQ) return; setSearching(true); const r=await searchStudents({name:nameQ,grade:gradeQ}); setSearchResults(r); setSearching(false); }
   async function submit() {
     if (!selectedStudent||!form.text.trim()) return;
