@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor } from "../components";
 import {
-  getAllTeachers, getAllGrades, createUser, updateStudent, createStudent,
+  getAllTeachers, getAllGrades, getAllStudents, getAllAttitudes,
+  createUser, updateStudent, createStudent,
   deleteStudent, deleteUserProfile, deleteGrade, searchStudents, searchParents,
   searchObservations, getAttitudesByStudent,
   ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS
@@ -79,6 +80,7 @@ export default function AdminScreen({ user, profile, logout }) {
             ["allgrades","📋 Notas"],
             ["attitudes","🎯 Actitudinales"],
             ["allobservations","💬 Observaciones"],
+            ["export","📥 Exportar Excel"],
           ].map(([k,l]) => (
             <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
           ))}
@@ -94,6 +96,7 @@ export default function AdminScreen({ user, profile, logout }) {
             {tab === "allgrades"       && <AllGradesTab grades={grades} setGrades={setGrades} setSaving={setSaving} loaded={gradesLoaded} loading={gradesLoading} />}
             {tab === "attitudes"       && <AllAttitudesTab />}
             {tab === "allobservations" && <AllObservationsTab />}
+            {tab === "export"         && <ExportTab />}
           </div>
         )}
       </div>
@@ -674,6 +677,233 @@ function AllObservationsTab() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// 📥 EXPORTAR EXCEL
+// 3 hojas (1 por trimestre), cada hoja tiene los 6 cursos separados
+// por una fila en blanco. Columnas: Alumno | Mat1 | Mat2 | ... | Actit.Prom
+// Usa SheetJS (xlsx) que ya viene en el bundle de Vite via CDN o npm
+// ════════════════════════════════════════════════════════════════════
+
+const ATTITUDE_NUM_EXP = { PD:1, DB:2, DM:3, DA:4 };
+const NUM_TO_ATT = (n) => {
+  if (!n) return "–";
+  if (n <= 1.5) return "PD";
+  if (n <= 2.5) return "DB";
+  if (n <= 3.5) return "DM";
+  return "DA";
+};
+const GRADES_ORDER = ["1°","2°","3°","4°","5°","6°"];
+const TRIM_NAMES_EXP = ["1° Trimestre","2° Trimestre","3° Trimestre"];
+
+function avgNum(nums) {
+  const valid = nums.filter(n => n !== null && n !== undefined && !isNaN(n));
+  if (!valid.length) return null;
+  return parseFloat((valid.reduce((a,b) => a+b, 0) / valid.length).toFixed(2));
+}
+
+function ExportTab() {
+  const [exporting, setExporting] = useState(false);
+  const [status, setStatus] = useState("");
+
+  async function handleExport() {
+    setExporting(true);
+    setStatus("Cargando datos...");
+
+    try {
+      // Cargar todo en paralelo
+      const [students, grades, attitudes] = await Promise.all([
+        getAllStudents(),
+        getAllGrades(),
+        getAllAttitudes(),
+      ]);
+
+      setStatus("Procesando...");
+
+      // Descubrir todas las materias que aparecen en grades
+      const subjectsSet = new Set(grades.map(g => g.subject).filter(Boolean));
+      const allSubjects = [...subjectsSet].sort();
+
+      // Importar SheetJS dinámicamente
+      const XLSX = await import("https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs");
+      const wb = XLSX.utils.book_new();
+
+      // Una hoja por trimestre
+      for (let trimIdx = 0; trimIdx < 3; trimIdx++) {
+        const trimNum = trimIdx + 1;
+        const sheetData = [];
+
+        // Encabezado global de columnas
+        const headerRow = ["Alumno", ...allSubjects, "Actit. Prom."];
+        sheetData.push(headerRow);
+
+        // Por cada curso
+        for (const grade of GRADES_ORDER) {
+          const courseStudents = students
+            .filter(s => s.grade === grade)
+            .sort((a,b) => a.name.localeCompare(b.name));
+
+          if (courseStudents.length === 0) continue;
+
+          // Fila de título del curso
+          sheetData.push([`── ${grade} Año ──`]);
+
+          for (const student of courseStudents) {
+            // Promedios por materia en este trimestre
+            const row = [student.name];
+            for (const subject of allSubjects) {
+              const studentGrades = grades.filter(
+                g => g.studentId === student.id &&
+                     g.subject === subject &&
+                     g.trimester === trimNum
+              );
+              const scores = studentGrades.map(g => g.score).filter(s => s !== undefined && s !== null);
+              row.push(scores.length > 0 ? avgNum(scores) : "–");
+            }
+
+            // Promedio actitudinal del trimestre
+            const studentAtts = attitudes.filter(
+              a => a.studentId === student.id && a.trimester === trimNum
+            );
+            if (studentAtts.length > 0) {
+              const attNums = studentAtts
+                .map(a => ATTITUDE_NUM_EXP[a.value])
+                .filter(Boolean);
+              const attAvgNum = attNums.length
+                ? attNums.reduce((a,b) => a+b, 0) / attNums.length
+                : null;
+              row.push(attAvgNum ? NUM_TO_ATT(attAvgNum) : "–");
+            } else {
+              row.push("–");
+            }
+
+            sheetData.push(row);
+          }
+
+          // Fila en blanco entre cursos
+          sheetData.push([]);
+        }
+
+        // Crear hoja
+        const ws = XLSX.utils.aoa_to_sheet(sheetData);
+
+        // Anchos de columna
+        ws["!cols"] = [
+          { wch: 28 }, // Alumno
+          ...allSubjects.map(() => ({ wch: 14 })),
+          { wch: 12 }, // Actit
+        ];
+
+        XLSX.utils.book_append_sheet(wb, ws, TRIM_NAMES_EXP[trimIdx]);
+      }
+
+      // Descargar
+      const year = new Date().getFullYear();
+      XLSX.writeFile(wb, `EduGestion_${year}.xlsx`);
+      setStatus("✅ Descargado correctamente");
+    } catch (err) {
+      console.error(err);
+      setStatus("❌ Error al exportar: " + err.message);
+    }
+
+    setExporting(false);
+  }
+
+  return (
+    <div>
+      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 8px" }}>
+        Exportar a Excel
+      </h2>
+      <p style={{ color:"#64748b", fontSize:"0.9rem", margin:"0 0 32px" }}>
+        Genera un archivo <strong>.xlsx</strong> con 3 hojas (una por trimestre). En cada hoja aparecen los 6 cursos con el promedio de cada materia y el promedio actitudinal del trimestre.
+      </p>
+
+      {/* Preview de estructura */}
+      <div className="card" style={{ padding:"24px", marginBottom:"28px", borderLeft:"4px solid #1e3a5f" }}>
+        <h3 style={{ margin:"0 0 16px", color:"#1e3a5f", fontSize:"0.95rem", textTransform:"uppercase", letterSpacing:"0.5px" }}>
+          Estructura del archivo
+        </h3>
+        <div style={{ display:"flex", gap:"12px", flexWrap:"wrap", marginBottom:"16px" }}>
+          {TRIM_NAMES_EXP.map((t,i) => (
+            <div key={i} style={{ padding:"10px 20px", borderRadius:"10px", background:"#dbeafe", color:"#1e40af", fontWeight:700, fontSize:"0.88rem" }}>
+              📄 {t}
+            </div>
+          ))}
+        </div>
+        <div style={{ overflowX:"auto" }}>
+          <table style={{ borderCollapse:"collapse", fontSize:"0.8rem", minWidth:"500px" }}>
+            <thead>
+              <tr style={{ background:"#1e3a5f", color:"white" }}>
+                {["Alumno","Matemática","Lengua","Historia","...","Actit. Prom."].map((h,i) => (
+                  <th key={i} style={{ padding:"8px 12px", textAlign:"left", fontWeight:600 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr style={{ background:"#f1f5f9" }}>
+                <td colSpan={6} style={{ padding:"6px 12px", fontWeight:700, color:"#475569", fontStyle:"italic" }}>── 1° Año ──</td>
+              </tr>
+              {[["García Juan","7.50","8.00","6.50","...","DM"],["López Ana","9.00","7.50","8.00","...","DA"]].map((row,i) => (
+                <tr key={i} style={{ borderBottom:"1px solid #e2e8f0" }}>
+                  {row.map((cell,j) => (
+                    <td key={j} style={{ padding:"6px 12px", color: j===0?"#1e293b":"#475569", fontWeight: j===0?600:400 }}>{cell}</td>
+                  ))}
+                </tr>
+              ))}
+              <tr><td colSpan={6} style={{ padding:"4px" }}></td></tr>
+              <tr style={{ background:"#f1f5f9" }}>
+                <td colSpan={6} style={{ padding:"6px 12px", fontWeight:700, color:"#475569", fontStyle:"italic" }}>── 2° Año ──</td>
+              </tr>
+              <tr style={{ borderBottom:"1px solid #e2e8f0" }}>
+                {["Pérez Carlos","8.00","–","7.00","...","DB"].map((cell,j) => (
+                  <td key={j} style={{ padding:"6px 12px", color: j===0?"#1e293b":"#475569", fontWeight: j===0?600:400 }}>{cell}</td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Botón */}
+      <div style={{ display:"flex", alignItems:"center", gap:"20px", flexWrap:"wrap" }}>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          style={{
+            padding:"14px 40px",
+            borderRadius:"12px",
+            background: exporting ? "#94a3b8" : "#1e3a5f",
+            color:"white",
+            border:"none",
+            cursor: exporting ? "not-allowed" : "pointer",
+            fontWeight:700,
+            fontSize:"1rem",
+            fontFamily:"inherit",
+            display:"flex",
+            alignItems:"center",
+            gap:"10px",
+          }}
+        >
+          {exporting ? "⏳ Generando..." : "📥 Descargar Excel"}
+        </button>
+        {status && (
+          <span style={{
+            fontSize:"0.9rem",
+            color: status.startsWith("✅") ? "#065f46" : status.startsWith("❌") ? "#dc2626" : "#64748b",
+            fontWeight:600,
+          }}>
+            {status}
+          </span>
+        )}
+      </div>
+
+      <p style={{ marginTop:"20px", fontSize:"0.8rem", color:"#94a3b8" }}>
+        ⚠️ La primera exportación puede tardar unos segundos según la cantidad de datos.
+        Los "–" indican que no hay notas o actitudinales cargadas para ese alumno en ese trimestre.
+      </p>
     </div>
   );
 }
