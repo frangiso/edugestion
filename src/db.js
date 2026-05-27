@@ -189,6 +189,12 @@ export async function deleteStudent(id) {
 // ═══════════════════════════════════════════════════════════════════
 // NOTAS
 // ═══════════════════════════════════════════════════════════════════
+// Trae todas las notas (hasta 500, para el panel del director)
+export async function getAllGrades() {
+  const snap = await getDocs(query(collection(db, "grades"), orderBy("date", "desc"), limit(500)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
 export async function searchGrades({ studentId = "", trimester = 0 } = {}) {
   if (studentId && cache.studentGrades[studentId]) {
     let r = cache.studentGrades[studentId];
