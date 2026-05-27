@@ -3,10 +3,7 @@ import {
   updateDoc, deleteDoc, query, where, orderBy, serverTimestamp,
   limit, startAfter, writeBatch
 } from "firebase/firestore";
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-} from "firebase/auth";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 import { db, auth } from "./firebase";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -16,7 +13,6 @@ const cache = {
   teachers: null,
   parents: null,
   allStudents: null,
-  grades: null,
   teacherGrades: {},
   studentGrades: {},
   observations: {},
@@ -26,7 +22,10 @@ const cache = {
   upcomingByTeacher: {},
   upcomingPastByTeacher: {},
   upcomingFiltered: {},
-  gradeTypes: {},   // { [teacherId]: [...tipos] }
+  gradeTypes: {},
+  // Actitudinales
+  attitudesByTeacher: {},   // { [teacherId]: [...] }
+  attitudesByStudent: {},   // { [studentId]: [...] }
 };
 
 const PAGE_SIZE = 20;
@@ -47,13 +46,11 @@ async function ensureStudentsLoaded() {
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS DE EVALUACIÓN PERSONALIZADOS
-// Guardados en users/{uid}.gradeTypes (array en el mismo doc del prof)
 // ═══════════════════════════════════════════════════════════════════
 export async function getGradeTypes(teacherId) {
   if (cache.gradeTypes[teacherId]) return cache.gradeTypes[teacherId];
   const snap = await getDoc(doc(db, "users", teacherId));
   const custom = snap.exists() ? (snap.data().gradeTypes || []) : [];
-  // Combinar defaults + custom sin duplicados
   const merged = [...DEFAULT_TYPES];
   custom.forEach(t => { if (!merged.includes(t)) merged.push(t); });
   cache.gradeTypes[teacherId] = merged;
@@ -64,13 +61,12 @@ export async function addGradeType(teacherId, newType) {
   const trimmed = newType.trim();
   if (!trimmed) return;
   const current = await getGradeTypes(teacherId);
-  if (current.includes(trimmed)) return; // ya existe
+  if (current.includes(trimmed)) return;
   const updated = [...current, trimmed];
-  // Solo guardar los custom (sin los defaults) en Firestore
   const customOnly = updated.filter(t => !DEFAULT_TYPES.includes(t));
   await updateDoc(doc(db, "users", teacherId), { gradeTypes: customOnly });
   cache.gradeTypes[teacherId] = updated;
-  cache.teachers = null; // invalidar para que recargue si es necesario
+  cache.teachers = null;
   return updated;
 }
 
@@ -99,50 +95,13 @@ export async function searchParents(searchText = "") {
     const q = searchText.toLowerCase();
     results = results.filter(p => p.name?.toLowerCase().includes(q) || p.email?.toLowerCase().includes(q));
   }
-  results = await Promise.all(results.map(async p => {
-    if (p.childrenNames && p.childrenNames.length > 0) return p;
-    const names = await resolveChildrenNames(p.childIds || [], p.email);
-    if (names.length > 0) {
-      await updateDoc(doc(db, "users", p.id), { childrenNames: names });
-      p.childrenNames = names;
-      const idx = cache.parents.findIndex(x => x.id === p.id);
-      if (idx !== -1) cache.parents[idx] = { ...cache.parents[idx], childrenNames: names };
-    }
-    return { ...p, childrenNames: names };
-  }));
   return results;
-}
-
-export async function resolveChildrenNames(childIds = [], tutorEmail = "") {
-  const names = [];
-  const missingIds = [];
-  for (const id of childIds) {
-    if (cache.studentNames[id]) names.push(cache.studentNames[id]);
-    else missingIds.push(id);
-  }
-  for (const id of missingIds) {
-    if (cache.allStudents) {
-      const s = cache.allStudents.find(x => x.id === id);
-      if (s) { cache.studentNames[id] = s.name; names.push(s.name); continue; }
-    }
-    const snap = await getDoc(doc(db, "students", id));
-    if (snap.exists()) { const name = snap.data().name; cache.studentNames[id] = name; names.push(name); }
-  }
-  if (childIds.length === 0 && tutorEmail) {
-    if (cache.allStudents) {
-      cache.allStudents.filter(s => s.tutorEmail === tutorEmail).forEach(s => names.push(s.name));
-    } else {
-      const snap = await getDocs(query(collection(db, "students"), where("tutorEmail", "==", tutorEmail)));
-      snap.docs.forEach(d => { const name = d.data().name; cache.studentNames[d.id] = name; names.push(name); });
-    }
-  }
-  return names;
 }
 
 export async function createUser(email, password, profileData) {
   let cred;
   try { cred = await createUserWithEmailAndPassword(auth, email, password); }
-  catch(e) { if (e.code === 'auth/email-already-in-use') throw new Error("Este email ya está registrado. Usá otro email."); throw e; }
+  catch(e) { if (e.code === 'auth/email-already-in-use') throw new Error("Este email ya está registrado."); throw e; }
   await setDoc(doc(db, "users", cred.user.uid), { ...profileData, email, createdAt: serverTimestamp() });
   if (profileData.role === "parent" && cache.parents) cache.parents = [...cache.parents, { id: cred.user.uid, ...profileData, email }];
   if (profileData.role === "teacher") cache.teachers = null;
@@ -164,7 +123,6 @@ export async function deleteUserProfile(uid) {
 // ALUMNOS
 // ═══════════════════════════════════════════════════════════════════
 export async function searchStudents({ name = "", grade = "" } = {}) {
-  // Si busca solo por año, ir directo a Firestore para garantizar todos los alumnos
   if (grade && !name) return await getStudentsByGrade(grade);
   const all = await ensureStudentsLoaded();
   let results = all;
@@ -176,14 +134,8 @@ export async function searchStudents({ name = "", grade = "" } = {}) {
 export async function getAllStudents() { return await ensureStudentsLoaded(); }
 
 export async function getStudentsByGrade(grade) {
-  // Lee siempre directo de Firestore para garantizar todos los alumnos del curso
-  const snap = await getDocs(query(
-    collection(db, "students"),
-    where("grade", "==", grade),
-    orderBy("name")
-  ));
+  const snap = await getDocs(query(collection(db, "students"), where("grade", "==", grade), orderBy("name")));
   const results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  // Actualizar caché global con los datos frescos
   if (cache.allStudents) {
     results.forEach(s => {
       const idx = cache.allStudents.findIndex(x => x.id === s.id);
@@ -217,9 +169,13 @@ export async function createStudent(data) {
   return ref.id;
 }
 
+// Edición completa: nombre, año, tutorEmail
 export async function updateStudent(id, data) {
   await updateDoc(doc(db, "students", id), data);
-  if (cache.allStudents) cache.allStudents = cache.allStudents.map(s => s.id === id ? { ...s, ...data } : s);
+  if (cache.allStudents) {
+    cache.allStudents = cache.allStudents.map(s => s.id === id ? { ...s, ...data } : s);
+    if (data.name) cache.studentNames[id] = data.name;
+  }
 }
 
 export async function deleteStudent(id) {
@@ -227,18 +183,13 @@ export async function deleteStudent(id) {
   if (cache.allStudents) cache.allStudents = cache.allStudents.filter(s => s.id !== id);
   delete cache.studentNames[id];
   delete cache.studentGrades[id];
+  delete cache.attitudesByStudent[id];
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // NOTAS
 // ═══════════════════════════════════════════════════════════════════
 export async function searchGrades({ studentId = "", trimester = 0 } = {}) {
-  if (cache.grades) {
-    let r = cache.grades;
-    if (studentId) r = r.filter(g => g.studentId === studentId);
-    if (trimester) r = r.filter(g => g.trimester === trimester);
-    return r;
-  }
   if (studentId && cache.studentGrades[studentId]) {
     let r = cache.studentGrades[studentId];
     if (trimester) r = r.filter(g => g.trimester === trimester);
@@ -256,9 +207,6 @@ export async function searchGrades({ studentId = "", trimester = 0 } = {}) {
 }
 
 export async function getGradesStats() {
-  if (cache.grades) {
-    return { total: cache.grades.length, byTrimester: [1,2,3].map(t => { const tg = cache.grades.filter(g=>g.trimester===t); return { t, count:tg.length, avg: tg.length>0?(tg.reduce((a,g)=>a+g.score,0)/tg.length).toFixed(1):"–" }; }) };
-  }
   const snap = await getDocs(query(collection(db,"grades"), orderBy("date","desc"), limit(200)));
   const grades = snap.docs.map(d => ({ id:d.id, ...d.data() }));
   return { total: grades.length, byTrimester: [1,2,3].map(t => { const tg = grades.filter(g=>g.trimester===t); return { t, count:tg.length, avg: tg.length>0?(tg.reduce((a,g)=>a+g.score,0)/tg.length).toFixed(1):"–" }; }) };
@@ -266,7 +214,6 @@ export async function getGradesStats() {
 
 export async function getGradesByTeacherPaged(teacherId) {
   if (cache.teacherGradesAllLoaded[teacherId] && cache.teacherGrades[teacherId]) return { grades: cache.teacherGrades[teacherId], hasMore: false };
-  if (cache.grades) { const f = cache.grades.filter(g=>g.teacherId===teacherId); cache.teacherGrades[teacherId]=f; cache.teacherGradesAllLoaded[teacherId]=true; return { grades:f, hasMore:false }; }
   const q = query(collection(db,"grades"), where("teacherId","==",teacherId), orderBy("date","desc"), limit(PAGE_SIZE));
   const snap = await getDocs(q);
   const results = snap.docs.map(d => ({ id:d.id, ...d.data() }));
@@ -294,7 +241,6 @@ export async function getMoreGradesByTeacher(teacherId) {
 
 export async function getGradesByStudent(studentId) {
   if (cache.studentGrades[studentId]) return cache.studentGrades[studentId];
-  if (cache.grades) { const f = cache.grades.filter(g=>g.studentId===studentId); cache.studentGrades[studentId]=f; return f; }
   const snap = await getDocs(query(collection(db,"grades"), where("studentId","==",studentId), orderBy("date","desc")));
   const results = snap.docs.map(d => ({ id:d.id, ...d.data() }));
   cache.studentGrades[studentId] = results;
@@ -317,49 +263,124 @@ export async function getGradesByStudentFiltered(studentId, { subject="", trimes
   return results;
 }
 
-// Guardar una sola nota
 export async function createGrade(data) {
   const ref = await addDoc(collection(db,"grades"), { ...data, createdAt: serverTimestamp() });
   const newGrade = { id:ref.id, ...data };
-  if (cache.grades) cache.grades = [newGrade, ...cache.grades];
   if (data.teacherId) { if (!cache.teacherGrades[data.teacherId]) cache.teacherGrades[data.teacherId]=[]; cache.teacherGrades[data.teacherId]=[newGrade,...cache.teacherGrades[data.teacherId]]; }
   if (data.studentId) { if (!cache.studentGrades[data.studentId]) cache.studentGrades[data.studentId]=[]; cache.studentGrades[data.studentId]=[newGrade,...cache.studentGrades[data.studentId]]; }
   return ref.id;
 }
 
-// Guardar múltiples notas de una vez (carga masiva por curso)
-// Usa batch para minimizar escrituras — 1 batch por cada 500 docs (Firestore limit)
 export async function createGradesBatch(gradesData) {
   const BATCH_LIMIT = 499;
   const chunks = [];
-  for (let i = 0; i < gradesData.length; i += BATCH_LIMIT) {
-    chunks.push(gradesData.slice(i, i + BATCH_LIMIT));
-  }
+  for (let i = 0; i < gradesData.length; i += BATCH_LIMIT) chunks.push(gradesData.slice(i, i + BATCH_LIMIT));
   const allNew = [];
   for (const chunk of chunks) {
     const batch = writeBatch(db);
-    const newDocs = chunk.map(data => {
-      const ref = doc(collection(db, "grades"));
-      batch.set(ref, { ...data, createdAt: serverTimestamp() });
-      return { id: ref.id, ...data };
-    });
+    const newDocs = chunk.map(data => { const ref = doc(collection(db,"grades")); batch.set(ref, { ...data, createdAt: serverTimestamp() }); return { id: ref.id, ...data }; });
     await batch.commit();
     allNew.push(...newDocs);
   }
-  // Actualizar caché
-  allNew.forEach(newGrade => {
-    if (cache.grades) cache.grades = [newGrade, ...cache.grades];
-    if (newGrade.teacherId) { if (!cache.teacherGrades[newGrade.teacherId]) cache.teacherGrades[newGrade.teacherId]=[]; cache.teacherGrades[newGrade.teacherId]=[newGrade,...cache.teacherGrades[newGrade.teacherId]]; }
-    if (newGrade.studentId) { if (!cache.studentGrades[newGrade.studentId]) cache.studentGrades[newGrade.studentId]=[]; cache.studentGrades[newGrade.studentId]=[newGrade,...cache.studentGrades[newGrade.studentId]]; }
+  allNew.forEach(ng => {
+    if (ng.teacherId) { if (!cache.teacherGrades[ng.teacherId]) cache.teacherGrades[ng.teacherId]=[]; cache.teacherGrades[ng.teacherId]=[ng,...cache.teacherGrades[ng.teacherId]]; }
+    if (ng.studentId) { if (!cache.studentGrades[ng.studentId]) cache.studentGrades[ng.studentId]=[]; cache.studentGrades[ng.studentId]=[ng,...cache.studentGrades[ng.studentId]]; }
   });
   return allNew;
 }
 
 export async function deleteGrade(id) {
   await deleteDoc(doc(db,"grades",id));
-  if (cache.grades) cache.grades = cache.grades.filter(g=>g.id!==id);
   Object.keys(cache.teacherGrades).forEach(k=>{ cache.teacherGrades[k]=cache.teacherGrades[k].filter(g=>g.id!==id); });
   Object.keys(cache.studentGrades).forEach(k=>{ cache.studentGrades[k]=cache.studentGrades[k].filter(g=>g.id!==id); });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ACTITUDINALES
+// Colección: attitudes
+// Campos: teacherId, teacherName, studentId, studentName, studentGrade,
+//         subject, trimester, value (PD|DB|DM|DA), date, note
+// Un único documento por alumno+materia+trimestre (upsert)
+// ═══════════════════════════════════════════════════════════════════
+export const ATTITUDE_VALUES = ["PD", "DB", "DM", "DA"];
+export const ATTITUDE_LABELS = {
+  PD: "Poco Desempeño",
+  DB: "Desempeño Básico",
+  DM: "Desempeño Medio",
+  DA: "Desempeño Alto",
+};
+export const ATTITUDE_COLORS = {
+  PD: "#ef4444",
+  DB: "#f59e0b",
+  DM: "#3b82f6",
+  DA: "#10b981",
+};
+
+export async function getAttitudesByTeacher(teacherId) {
+  if (cache.attitudesByTeacher[teacherId]) return cache.attitudesByTeacher[teacherId];
+  const snap = await getDocs(query(collection(db,"attitudes"), where("teacherId","==",teacherId), orderBy("date","desc")));
+  const results = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+  cache.attitudesByTeacher[teacherId] = results;
+  results.forEach(a => {
+    if (a.studentId) {
+      if (!cache.attitudesByStudent[a.studentId]) cache.attitudesByStudent[a.studentId]=[];
+      if (!cache.attitudesByStudent[a.studentId].find(x=>x.id===a.id)) cache.attitudesByStudent[a.studentId].push(a);
+    }
+  });
+  return results;
+}
+
+export async function getAttitudesByStudent(studentId) {
+  if (cache.attitudesByStudent[studentId]) return cache.attitudesByStudent[studentId];
+  const snap = await getDocs(query(collection(db,"attitudes"), where("studentId","==",studentId), orderBy("date","desc")));
+  const results = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+  cache.attitudesByStudent[studentId] = results;
+  return results;
+}
+
+// Guarda o actualiza una actitudinal (upsert por teacherId+studentId+subject+trimester)
+export async function saveAttitude(data) {
+  // Buscar si ya existe
+  const existing = await getDocs(query(
+    collection(db,"attitudes"),
+    where("teacherId","==",data.teacherId),
+    where("studentId","==",data.studentId),
+    where("subject","==",data.subject),
+    where("trimester","==",data.trimester)
+  ));
+  let id;
+  if (!existing.empty) {
+    id = existing.docs[0].id;
+    await updateDoc(doc(db,"attitudes",id), { ...data, updatedAt: serverTimestamp() });
+  } else {
+    const ref = await addDoc(collection(db,"attitudes"), { ...data, createdAt: serverTimestamp() });
+    id = ref.id;
+  }
+  const saved = { id, ...data };
+  // Actualizar caché
+  if (cache.attitudesByTeacher[data.teacherId]) {
+    const idx = cache.attitudesByTeacher[data.teacherId].findIndex(a => a.id === id);
+    if (idx !== -1) cache.attitudesByTeacher[data.teacherId][idx] = saved;
+    else cache.attitudesByTeacher[data.teacherId] = [saved, ...cache.attitudesByTeacher[data.teacherId]];
+  }
+  if (cache.attitudesByStudent[data.studentId]) {
+    const idx = cache.attitudesByStudent[data.studentId].findIndex(a => a.id === id);
+    if (idx !== -1) cache.attitudesByStudent[data.studentId][idx] = saved;
+    else cache.attitudesByStudent[data.studentId] = [saved, ...cache.attitudesByStudent[data.studentId]];
+  }
+  return id;
+}
+
+// Guardar muchas actitudinales de golpe (carga masiva por curso)
+export async function saveAttitudesBatch(attitudesData) {
+  const results = await Promise.all(attitudesData.map(a => saveAttitude(a)));
+  return results;
+}
+
+export async function deleteAttitude(id, teacherId, studentId) {
+  await deleteDoc(doc(db,"attitudes",id));
+  if (cache.attitudesByTeacher[teacherId]) cache.attitudesByTeacher[teacherId] = cache.attitudesByTeacher[teacherId].filter(a=>a.id!==id);
+  if (cache.attitudesByStudent[studentId]) cache.attitudesByStudent[studentId] = cache.attitudesByStudent[studentId].filter(a=>a.id!==id);
 }
 
 // ═══════════════════════════════════════════════════════════════════
