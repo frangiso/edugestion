@@ -117,7 +117,7 @@ export default function TeacherScreen({ user, profile, logout }) {
           <div className="fade" key={tab}>
             {tab==="add"          && <AddGrade user={user} subject={selectedSubject} grades={grades} setGrades={setGrades} gradeTypes={gradeTypes} setGradeTypes={setGradeTypes} setSaving={setSaving} profile={profile} />}
             {tab==="mygrades"     && <MyGrades grades={grades} setGrades={setGrades} setSaving={setSaving} hasMore={hasMore} loadMore={loadMore} />}
-            {tab==="student"      && <StudentGradesTab user={user} subject={selectedSubject} />}
+            {tab==="student"      && <StudentGradesTab user={user} subject={selectedSubject} setSaving={setSaving} />}
             {tab==="attitudes"    && <AttitudesTab user={user} profile={profile} subject={selectedSubject} attitudes={attitudes} setAttitudes={setAttitudes} setSaving={setSaving} loaded={attitudesLoaded} />}
             {tab==="observations" && <ObservationsTab user={user} profile={profile} observations={observations} setObservations={setObservations} setSaving={setSaving} loaded={observationsLoaded} />}
             {tab==="upcoming"     && <UpcomingTab user={user} profile={profile} subject={selectedSubject} setSaving={setSaving} />}
@@ -793,7 +793,7 @@ function Ranking({ grades, subject }) {
 // VER ALUMNO — el profe busca un alumno y ve las notas que ÉL le puso
 // en SU materia activa, agrupadas por trimestre
 // ═══════════════════════════════════════════════════════════════════
-function StudentGradesTab({ user, subject }) {
+function StudentGradesTab({ user, subject, setSaving }) {
   const [nameQ, setNameQ] = useState("");
   const [gradeQ, setGradeQ] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -801,6 +801,14 @@ function StudentGradesTab({ user, subject }) {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [allGrades, setAllGrades] = useState([]);   // todas las notas del alumno
   const [loadingGrades, setLoadingGrades] = useState(false);
+
+  async function removeGrade(id) {
+    if (!confirm("¿Eliminar esta evaluación?")) return;
+    setSaving(true);
+    await deleteGrade(id);
+    setAllGrades(prev => prev.filter(g => g.id !== id));
+    setSaving(false);
+  }
 
   async function doSearch() {
     if (!nameQ && !gradeQ) return;
@@ -978,11 +986,14 @@ function StudentGradesTab({ user, subject }) {
                               <div style={{ fontSize:"0.78rem", color:"#7c3aed", marginTop:"4px" }}>💬 {g.note}</div>
                             )}
                           </div>
-                          <div style={{ textAlign:"right", flexShrink:0 }}>
-                            <span style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>nota</span>
-                            <div style={{ fontSize:"1.4rem", fontWeight:800, color:scoreColor(g.score), fontFamily:"'Playfair Display',serif", lineHeight:1 }}>
-                              {g.score}<span style={{ fontSize:"0.7rem", color:"#94a3b8", fontWeight:400 }}>/10</span>
+                          <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:"8px", flexShrink:0 }}>
+                            <div style={{ textAlign:"right" }}>
+                              <span style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>nota</span>
+                              <div style={{ fontSize:"1.4rem", fontWeight:800, color:scoreColor(g.score), fontFamily:"'Playfair Display',serif", lineHeight:1 }}>
+                                {g.score}<span style={{ fontSize:"0.7rem", color:"#94a3b8", fontWeight:400 }}>/10</span>
+                              </div>
                             </div>
+                            <button className="btn-danger" onClick={() => removeGrade(g.id)}>Eliminar</button>
                           </div>
                         </div>
                       ))}
