@@ -189,10 +189,24 @@ export async function deleteStudent(id) {
 // ═══════════════════════════════════════════════════════════════════
 // NOTAS
 // ═══════════════════════════════════════════════════════════════════
-// Trae todas las notas (hasta 500, para el panel del director)
+// Trae TODAS las notas sin límite — pagina de a 500 hasta agotar
+// Se usa en el panel del director y en el export Excel
+let allGradesCache = null;
 export async function getAllGrades() {
-  const snap = await getDocs(query(collection(db, "grades"), orderBy("date", "desc"), limit(500)));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (allGradesCache) return allGradesCache;
+  const results = [];
+  let lastDoc = null;
+  while (true) {
+    const q = lastDoc
+      ? query(collection(db, "grades"), orderBy("date", "desc"), startAfter(lastDoc), limit(500))
+      : query(collection(db, "grades"), orderBy("date", "desc"), limit(500));
+    const snap = await getDocs(q);
+    snap.docs.forEach(d => results.push({ id: d.id, ...d.data() }));
+    if (snap.docs.length < 500) break;
+    lastDoc = snap.docs[snap.docs.length - 1];
+  }
+  allGradesCache = results;
+  return results;
 }
 
 // Trae TODAS las notas de un profe sin paginación (para "Ver alumno")
@@ -284,6 +298,7 @@ export async function getGradesByStudentFiltered(studentId, { subject="", trimes
 }
 
 export async function createGrade(data) {
+  allGradesCache = null;
   const ref = await addDoc(collection(db,"grades"), { ...data, createdAt: serverTimestamp() });
   const newGrade = { id:ref.id, ...data };
   if (data.teacherId) { if (!cache.teacherGrades[data.teacherId]) cache.teacherGrades[data.teacherId]=[]; cache.teacherGrades[data.teacherId]=[newGrade,...cache.teacherGrades[data.teacherId]]; }
@@ -311,6 +326,7 @@ export async function createGradesBatch(gradesData) {
 
 export async function deleteGrade(id) {
   await deleteDoc(doc(db,"grades",id));
+  allGradesCache = null;
   Object.keys(cache.teacherGrades).forEach(k=>{ cache.teacherGrades[k]=cache.teacherGrades[k].filter(g=>g.id!==id); });
   Object.keys(cache.studentGrades).forEach(k=>{ cache.studentGrades[k]=cache.studentGrades[k].filter(g=>g.id!==id); });
 }
