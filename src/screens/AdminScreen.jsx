@@ -721,7 +721,7 @@ function ExportTab() {
         getAllAttitudes(),
       ]);
 
-      setStatus("Procesando...");
+      setStatus(`Procesando ${grades.length} evaluaciones...`);
 
       // Descubrir todas las materias que aparecen en grades
       const subjectsSet = new Set(grades.map(g => g.subject).filter(Boolean));
