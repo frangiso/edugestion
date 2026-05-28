@@ -790,23 +790,42 @@ function Ranking({ grades, subject }) {
   );
 }
 // ═══════════════════════════════════════════════════════════════════
-// VER ALUMNO — el profe busca un alumno y ve las notas que ÉL le puso
-// en SU materia activa, agrupadas por trimestre
+// VER ALUMNO — vista individual + tabla masiva por curso
 // ═══════════════════════════════════════════════════════════════════
 function StudentGradesTab({ user, subject, setSaving }) {
+  const [mode, setMode] = useState("bulk"); // "bulk" | "individual"
+  const [allTeacherGrades, setAllTeacherGrades] = useState(null); // null = no cargado aún
+  const [loadingAll, setLoadingAll] = useState(false);
+
+  // ── Modo individual ──
   const [nameQ, setNameQ] = useState("");
   const [gradeQ, setGradeQ] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [allGrades, setAllGrades] = useState([]);   // todas las notas del alumno
   const [loadingGrades, setLoadingGrades] = useState(false);
+
+  // Cargar TODAS las notas del profe una sola vez (se reutiliza en ambos modos)
+  async function ensureTeacherGrades() {
+    if (allTeacherGrades !== null) return allTeacherGrades;
+    setLoadingAll(true);
+    const g = await getAllGradesByTeacher(user.uid);
+    setAllTeacherGrades(g);
+    setLoadingAll(false);
+    return g;
+  }
+
+  // Al cambiar de modo, asegurar que las notas estén cargadas
+  async function handleModeChange(m) {
+    setMode(m);
+    if (m === "bulk") ensureTeacherGrades();
+  }
 
   async function removeGrade(id) {
     if (!confirm("¿Eliminar esta evaluación?")) return;
     setSaving(true);
     await deleteGrade(id);
-    setAllGrades(prev => prev.filter(g => g.id !== id));
+    setAllTeacherGrades(prev => prev ? prev.filter(g => g.id !== id) : null);
     setSaving(false);
   }
 
@@ -822,187 +841,320 @@ function StudentGradesTab({ user, subject, setSaving }) {
     setSelectedStudent(s);
     setSearchResults([]);
     setLoadingGrades(true);
-    // getAllGradesByTeacher trae TODAS las notas del profe sin paginación
-    // y las filtramos localmente por alumno — garantiza que aparecen todas
-    const teacherGrades = await getAllGradesByTeacher(user.uid);
-    setAllGrades(teacherGrades);
+    await ensureTeacherGrades();
     setLoadingGrades(false);
   }
 
   function clearStudent() {
     setSelectedStudent(null);
-    setAllGrades([]);
     setNameQ("");
     setGradeQ("");
     setSearchResults([]);
   }
 
-  // Filtrar: notas de ESTE alumno en la materia activa
-  const myGrades = allGrades.filter(
-    g => g.studentId === selectedStudent?.id && g.subject === subject
-  );
+  // Notas del alumno seleccionado en la materia activa
+  const myGrades = allTeacherGrades
+    ? allTeacherGrades.filter(g => g.studentId === selectedStudent?.id && g.subject === subject)
+    : [];
 
-  // Agrupar por trimestre
+  // Agrupar por trimestre (individual)
   const byTrim = { 1: [], 2: [], 3: [] };
-  myGrades.forEach(g => {
-    if (byTrim[g.trimester]) byTrim[g.trimester].push(g);
-  });
+  myGrades.forEach(g => { if (byTrim[g.trimester]) byTrim[g.trimester].push(g); });
 
   return (
     <div>
-      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 6px" }}>
-        Ver notas de un alumno
-      </h2>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"6px" }}>
+        <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>
+          Ver notas · <span style={{ color:"#065f46" }}>{subject}</span>
+        </h2>
+        <div style={{ display:"flex", gap:"8px" }}>
+          {[["bulk","👥 Por curso"],["individual","👤 Individual"]].map(([m,l]) => (
+            <button key={m} onClick={() => handleModeChange(m)} style={{ padding:"8px 16px", borderRadius:"20px", border:`2px solid ${mode===m?"#1e3a5f":"#e2e8f0"}`, background:mode===m?"#1e3a5f":"white", color:mode===m?"white":"#64748b", cursor:"pointer", fontSize:"0.82rem", fontWeight:600 }}>{l}</button>
+          ))}
+        </div>
+      </div>
       <p style={{ color:"#64748b", fontSize:"0.88rem", margin:"0 0 20px" }}>
-        Buscá un alumno para ver todas las notas que vos le pusiste en <strong>{subject}</strong>.
+        {mode==="bulk" ? "Promedio de todos los alumnos por trimestre en tu materia." : "Buscá un alumno para ver el detalle y eliminar evaluaciones."}
       </p>
 
-      {/* Buscador */}
-      {!selectedStudent ? (
-        <div className="card" style={{ padding:"24px" }}>
-          <div style={{ display:"flex", gap:"10px", marginBottom:"10px", flexWrap:"wrap" }}>
-            <input
-              value={nameQ}
-              onChange={e => setNameQ(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && doSearch()}
-              placeholder="🔍 Nombre del alumno..."
-              style={{ flex:1, minWidth:"160px" }}
-            />
-            <select value={gradeQ} onChange={e => setGradeQ(e.target.value)} style={{ width:"120px" }}>
-              <option value="">Todos los años</option>
-              {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
-            </select>
-            <button className="btn-primary" onClick={doSearch} disabled={searching}>
-              {searching ? "Buscando..." : "Buscar"}
-            </button>
-          </div>
-          {searchResults.length > 0 && (
-            <div style={{ display:"flex", flexDirection:"column", gap:"6px", maxHeight:"240px", overflowY:"auto" }}>
-              {searchResults.map(s => (
-                <div
-                  key={s.id}
-                  onClick={() => selectStudent(s)}
-                  style={{ padding:"10px 14px", background:"#f8fafc", borderRadius:"8px", border:"1px solid #e2e8f0", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}
-                >
-                  <span style={{ fontWeight:600, color:"#1e293b" }}>{s.name}</span>
-                  <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{s.grade}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {searchResults.length === 0 && nameQ && !searching && (
-            <p style={{ color:"#94a3b8", fontSize:"0.85rem", margin:"8px 0 0" }}>
-              Sin resultados. Probá con otro nombre o año.
-            </p>
-          )}
-        </div>
-      ) : (
-        <div>
-          {/* Header alumno seleccionado */}
-          <div className="card" style={{ padding:"16px 24px", marginBottom:"20px", display:"flex", justifyContent:"space-between", alignItems:"center", borderLeft:"5px solid #1e3a5f" }}>
-            <div>
-              <div style={{ fontWeight:700, color:"#1e293b", fontSize:"1.05rem" }}>{selectedStudent.name}</div>
-              <div style={{ display:"flex", gap:"8px", marginTop:"4px", flexWrap:"wrap" }}>
-                <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{selectedStudent.grade}</span>
-                <span className="badge" style={{ background:"#d1fae5", color:"#065f46" }}>{subject}</span>
-              </div>
-            </div>
-            <button
-              onClick={clearStudent}
-              style={{ padding:"8px 16px", borderRadius:"10px", border:"1px solid #e2e8f0", cursor:"pointer", background:"white", color:"#64748b", fontSize:"0.85rem" }}
-            >
-              ← Buscar otro
-            </button>
-          </div>
+      {/* ══ MODO MASIVO: tabla por curso ════════════════════════════ */}
+      {mode === "bulk" && (
+        <BulkAveragesView
+          user={user}
+          subject={subject}
+          allTeacherGrades={allTeacherGrades}
+          loadingAll={loadingAll}
+          ensureTeacherGrades={ensureTeacherGrades}
+          onSelectStudent={(s) => { handleModeChange("individual"); selectStudent(s); }}
+        />
+      )}
 
-          {loadingGrades ? (
-            <div style={{ textAlign:"center", padding:"48px", color:"#94a3b8" }}>Cargando notas...</div>
-          ) : myGrades.length === 0 ? (
-            <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
-              <div style={{ fontSize:"3rem", marginBottom:"8px" }}>📭</div>
-              <p>Todavía no cargaste ninguna nota para <strong>{selectedStudent.name}</strong> en {subject}.</p>
+      {/* ══ MODO INDIVIDUAL: detalle de un alumno ═══════════════════ */}
+      {mode === "individual" && (
+        <>
+          {!selectedStudent ? (
+            <div className="card" style={{ padding:"24px" }}>
+              <div style={{ display:"flex", gap:"10px", marginBottom:"10px", flexWrap:"wrap" }}>
+                <input
+                  value={nameQ}
+                  onChange={e => setNameQ(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && doSearch()}
+                  placeholder="🔍 Nombre del alumno..."
+                  style={{ flex:1, minWidth:"160px" }}
+                />
+                <select value={gradeQ} onChange={e => setGradeQ(e.target.value)} style={{ width:"120px" }}>
+                  <option value="">Todos los años</option>
+                  {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+                <button className="btn-primary" onClick={doSearch} disabled={searching}>
+                  {searching ? "Buscando..." : "Buscar"}
+                </button>
+              </div>
+              {searchResults.length > 0 && (
+                <div style={{ display:"flex", flexDirection:"column", gap:"6px", maxHeight:"240px", overflowY:"auto" }}>
+                  {searchResults.map(s => (
+                    <div key={s.id} onClick={() => selectStudent(s)} style={{ padding:"10px 14px", background:"#f8fafc", borderRadius:"8px", border:"1px solid #e2e8f0", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                      <span style={{ fontWeight:600, color:"#1e293b" }}>{s.name}</span>
+                      <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{s.grade}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {searchResults.length === 0 && nameQ && !searching && (
+                <p style={{ color:"#94a3b8", fontSize:"0.85rem", margin:"8px 0 0" }}>Sin resultados.</p>
+              )}
             </div>
           ) : (
-            <>
-              {/* Resumen global */}
-              <div className="card" style={{ padding:"16px 24px", marginBottom:"20px", display:"flex", gap:"24px", flexWrap:"wrap", alignItems:"center" }}>
-                <div style={{ textAlign:"center" }}>
-                  <div style={{ fontSize:"2rem", fontWeight:800, color: avg(myGrades.map(g=>g.score))==="–"?"#94a3b8":scoreColor(parseFloat(avg(myGrades.map(g=>g.score)))), fontFamily:"'Playfair Display',serif" }}>
-                    {avg(myGrades.map(g => g.score))}
+            <div>
+              {/* Header alumno */}
+              <div className="card" style={{ padding:"16px 24px", marginBottom:"20px", display:"flex", justifyContent:"space-between", alignItems:"center", borderLeft:"5px solid #1e3a5f" }}>
+                <div>
+                  <div style={{ fontWeight:700, color:"#1e293b", fontSize:"1.05rem" }}>{selectedStudent.name}</div>
+                  <div style={{ display:"flex", gap:"8px", marginTop:"4px", flexWrap:"wrap" }}>
+                    <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{selectedStudent.grade}</span>
+                    <span className="badge" style={{ background:"#d1fae5", color:"#065f46" }}>{subject}</span>
                   </div>
-                  <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>Promedio general</div>
                 </div>
-                <div style={{ textAlign:"center" }}>
-                  <div style={{ fontSize:"2rem", fontWeight:800, color:"#1e3a5f", fontFamily:"'Playfair Display',serif" }}>{myGrades.length}</div>
-                  <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>Evaluaciones</div>
-                </div>
-                <div style={{ textAlign:"center" }}>
-                  <div style={{ fontSize:"2rem", fontWeight:800, color:"#7c3aed", fontFamily:"'Playfair Display',serif" }}>
-                    {Math.min(...myGrades.map(g => g.score))}
-                  </div>
-                  <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>Nota mínima</div>
-                </div>
-                <div style={{ textAlign:"center" }}>
-                  <div style={{ fontSize:"2rem", fontWeight:800, color:"#065f46", fontFamily:"'Playfair Display',serif" }}>
-                    {Math.max(...myGrades.map(g => g.score))}
-                  </div>
-                  <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>Nota máxima</div>
-                </div>
+                <button onClick={clearStudent} style={{ padding:"8px 16px", borderRadius:"10px", border:"1px solid #e2e8f0", cursor:"pointer", background:"white", color:"#64748b", fontSize:"0.85rem" }}>
+                  ← Buscar otro
+                </button>
               </div>
 
-              {/* Notas por trimestre */}
-              {[1, 2, 3].map(t => {
-                const tGrades = byTrim[t];
-                if (tGrades.length === 0) return null;
-                const tAvg = avg(tGrades.map(g => g.score));
-                const tAvgNum = parseFloat(tAvg);
-                return (
-                  <div key={t} style={{ marginBottom:"20px" }}>
-                    {/* Encabezado trimestre */}
-                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px" }}>
-                      <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0, fontSize:"1.05rem" }}>
-                        {trimNames[t-1]}
-                      </h3>
-                      <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
-                        <span style={{ fontSize:"0.78rem", color:"#64748b" }}>{tGrades.length} eval.</span>
-                        <span style={{ fontWeight:800, fontSize:"1.2rem", color: tAvg==="–"?"#94a3b8":scoreColor(tAvgNum), fontFamily:"'Playfair Display',serif" }}>
-                          {tAvg}
-                        </span>
-                        <span style={{ fontSize:"0.72rem", color:"#94a3b8" }}>prom.</span>
+              {loadingGrades ? (
+                <div style={{ textAlign:"center", padding:"48px", color:"#94a3b8" }}>Cargando notas...</div>
+              ) : myGrades.length === 0 ? (
+                <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+                  <div style={{ fontSize:"3rem", marginBottom:"8px" }}>📭</div>
+                  <p>Todavía no cargaste ninguna nota para <strong>{selectedStudent.name}</strong> en {subject}.</p>
+                </div>
+              ) : (
+                <>
+                  {/* Resumen global */}
+                  <div className="card" style={{ padding:"16px 24px", marginBottom:"20px", display:"flex", gap:"24px", flexWrap:"wrap", alignItems:"center" }}>
+                    <div style={{ textAlign:"center" }}>
+                      <div style={{ fontSize:"2rem", fontWeight:800, color: avg(myGrades.map(g=>g.score))==="–"?"#94a3b8":scoreColor(parseFloat(avg(myGrades.map(g=>g.score)))), fontFamily:"'Playfair Display',serif" }}>
+                        {avg(myGrades.map(g => g.score))}
                       </div>
+                      <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>Promedio general</div>
                     </div>
-
-                    {/* Lista de notas */}
-                    <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
-                      {tGrades.map(g => (
-                        <div key={g.id} className="card" style={{ padding:"14px 18px", display:"flex", alignItems:"center", gap:"14px", borderLeft:`4px solid ${scoreColor(g.score)}` }}>
-                          <div style={{ width:"40px", height:"40px", borderRadius:"50%", background:scoreColor(g.score), display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:800, fontSize:"1rem", flexShrink:0 }}>
-                            {g.score}
-                          </div>
-                          <div style={{ flex:1 }}>
-                            <div style={{ fontWeight:600, color:"#1e293b", fontSize:"0.9rem" }}>{g.type}</div>
-                            <div style={{ fontSize:"0.78rem", color:"#94a3b8", marginTop:"2px" }}>{g.date}</div>
-                            {g.note && (
-                              <div style={{ fontSize:"0.78rem", color:"#7c3aed", marginTop:"4px" }}>💬 {g.note}</div>
-                            )}
-                          </div>
-                          <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:"8px", flexShrink:0 }}>
-                            <div style={{ textAlign:"right" }}>
-                              <span style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>nota</span>
-                              <div style={{ fontSize:"1.4rem", fontWeight:800, color:scoreColor(g.score), fontFamily:"'Playfair Display',serif", lineHeight:1 }}>
-                                {g.score}<span style={{ fontSize:"0.7rem", color:"#94a3b8", fontWeight:400 }}>/10</span>
-                              </div>
-                            </div>
-                            <button className="btn-danger" onClick={() => removeGrade(g.id)}>Eliminar</button>
-                          </div>
-                        </div>
-                      ))}
+                    <div style={{ textAlign:"center" }}>
+                      <div style={{ fontSize:"2rem", fontWeight:800, color:"#1e3a5f", fontFamily:"'Playfair Display',serif" }}>{myGrades.length}</div>
+                      <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>Evaluaciones</div>
+                    </div>
+                    <div style={{ textAlign:"center" }}>
+                      <div style={{ fontSize:"2rem", fontWeight:800, color:"#7c3aed", fontFamily:"'Playfair Display',serif" }}>
+                        {Math.min(...myGrades.map(g => g.score))}
+                      </div>
+                      <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>Nota mínima</div>
+                    </div>
+                    <div style={{ textAlign:"center" }}>
+                      <div style={{ fontSize:"2rem", fontWeight:800, color:"#065f46", fontFamily:"'Playfair Display',serif" }}>
+                        {Math.max(...myGrades.map(g => g.score))}
+                      </div>
+                      <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>Nota máxima</div>
                     </div>
                   </div>
+
+                  {/* Notas por trimestre */}
+                  {[1, 2, 3].map(t => {
+                    const tGrades = byTrim[t];
+                    if (tGrades.length === 0) return null;
+                    const tAvg = avg(tGrades.map(g => g.score));
+                    const tAvgNum = parseFloat(tAvg);
+                    return (
+                      <div key={t} style={{ marginBottom:"20px" }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px" }}>
+                          <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0, fontSize:"1.05rem" }}>{trimNames[t-1]}</h3>
+                          <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
+                            <span style={{ fontSize:"0.78rem", color:"#64748b" }}>{tGrades.length} eval.</span>
+                            <span style={{ fontWeight:800, fontSize:"1.2rem", color: tAvg==="–"?"#94a3b8":scoreColor(tAvgNum), fontFamily:"'Playfair Display',serif" }}>{tAvg}</span>
+                            <span style={{ fontSize:"0.72rem", color:"#94a3b8" }}>prom.</span>
+                          </div>
+                        </div>
+                        <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
+                          {tGrades.map(g => (
+                            <div key={g.id} className="card" style={{ padding:"14px 18px", display:"flex", alignItems:"center", gap:"14px", borderLeft:`4px solid ${scoreColor(g.score)}` }}>
+                              <div style={{ width:"40px", height:"40px", borderRadius:"50%", background:scoreColor(g.score), display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:800, fontSize:"1rem", flexShrink:0 }}>
+                                {g.score}
+                              </div>
+                              <div style={{ flex:1 }}>
+                                <div style={{ fontWeight:600, color:"#1e293b", fontSize:"0.9rem" }}>{g.type}</div>
+                                <div style={{ fontSize:"0.78rem", color:"#94a3b8", marginTop:"2px" }}>{g.date}</div>
+                                {g.note && <div style={{ fontSize:"0.78rem", color:"#7c3aed", marginTop:"4px" }}>💬 {g.note}</div>}
+                              </div>
+                              <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:"8px", flexShrink:0 }}>
+                                <div style={{ textAlign:"right" }}>
+                                  <span style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>nota</span>
+                                  <div style={{ fontSize:"1.4rem", fontWeight:800, color:scoreColor(g.score), fontFamily:"'Playfair Display',serif", lineHeight:1 }}>
+                                    {g.score}<span style={{ fontSize:"0.7rem", color:"#94a3b8", fontWeight:400 }}>/10</span>
+                                  </div>
+                                </div>
+                                <button className="btn-danger" onClick={() => removeGrade(g.id)}>Eliminar</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// VISTA MASIVA — tabla de promedios por curso
+// ═══════════════════════════════════════════════════════════════════
+function BulkAveragesView({ user, subject, allTeacherGrades, loadingAll, ensureTeacherGrades, onSelectStudent }) {
+  const [selectedGrade, setSelectedGrade] = useState(GRADES[0]);
+  const [courseStudents, setCourseStudents] = useState([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  // Cargar alumnos del curso seleccionado y las notas del profe
+  useEffect(() => {
+    loadCourse();
+  }, [selectedGrade]);
+
+  async function loadCourse() {
+    setLoadingStudents(true);
+    setLoaded(false);
+    await ensureTeacherGrades();
+    const students = await searchStudents({ grade: selectedGrade });
+    setCourseStudents(students.sort((a,b) => a.name.localeCompare(b.name)));
+    setLoadingStudents(false);
+    setLoaded(true);
+  }
+
+  // Calcular promedio de un alumno en un trimestre
+  function trimAvg(studentId, trim) {
+    if (!allTeacherGrades) return "–";
+    const gs = allTeacherGrades.filter(
+      g => g.studentId === studentId && g.subject === subject && g.trimester === trim
+    );
+    return gs.length > 0 ? avg(gs.map(g => g.score)) : "–";
+  }
+
+  function generalAvg(studentId) {
+    if (!allTeacherGrades) return "–";
+    const gs = allTeacherGrades.filter(
+      g => g.studentId === studentId && g.subject === subject
+    );
+    return gs.length > 0 ? avg(gs.map(g => g.score)) : "–";
+  }
+
+  const isLoading = loadingAll || loadingStudents;
+
+  return (
+    <div>
+      {/* Selector de curso */}
+      <div style={{ display:"flex", gap:"8px", marginBottom:"20px", flexWrap:"wrap" }}>
+        {GRADES.map(g => (
+          <button key={g} onClick={() => setSelectedGrade(g)} style={{ padding:"8px 20px", borderRadius:"20px", border:`2px solid ${selectedGrade===g?"#1e3a5f":"#e2e8f0"}`, background:selectedGrade===g?"#1e3a5f":"white", color:selectedGrade===g?"white":"#64748b", cursor:"pointer", fontWeight:700, fontSize:"0.88rem" }}>
+            {g}
+          </button>
+        ))}
+      </div>
+
+      {isLoading ? (
+        <div style={{ textAlign:"center", padding:"48px", color:"#94a3b8" }}>Cargando...</div>
+      ) : courseStudents.length === 0 ? (
+        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"3rem" }}>📭</div>
+          <p>No hay alumnos en {selectedGrade}</p>
+        </div>
+      ) : (
+        <div className="card" style={{ overflow:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:"520px" }}>
+            <thead>
+              <tr style={{ background:"#1e3a5f", color:"white" }}>
+                <th style={{ padding:"12px 16px", textAlign:"left", fontWeight:600, fontSize:"0.85rem" }}>Alumno</th>
+                {trimNames.map((n,i) => (
+                  <th key={i} style={{ padding:"12px 16px", textAlign:"center", fontWeight:600, fontSize:"0.85rem" }}>{n}</th>
+                ))}
+                <th style={{ padding:"12px 16px", textAlign:"center", fontWeight:600, fontSize:"0.85rem" }}>Prom. Anual</th>
+                <th style={{ padding:"12px 16px", textAlign:"center", fontWeight:600, fontSize:"0.85rem" }}>Detalle</th>
+              </tr>
+            </thead>
+            <tbody>
+              {courseStudents.map((s, idx) => {
+                const t1 = trimAvg(s.id, 1);
+                const t2 = trimAvg(s.id, 2);
+                const t3 = trimAvg(s.id, 3);
+                const ga = generalAvg(s.id);
+                const gaNum = parseFloat(ga);
+                return (
+                  <tr key={s.id} style={{ borderBottom:"1px solid #f1f5f9", background: idx%2===0?"white":"#f8fafc" }}>
+                    <td style={{ padding:"12px 16px", fontWeight:600, color:"#1e293b" }}>{s.name}</td>
+                    {[t1,t2,t3].map((v,i) => {
+                      const vNum = parseFloat(v);
+                      return (
+                        <td key={i} style={{ padding:"12px 16px", textAlign:"center" }}>
+                          <span style={{ fontWeight:700, color: v==="–"?"#cbd5e1":scoreColor(vNum), fontSize:"1rem" }}>{v}</span>
+                        </td>
+                      );
+                    })}
+                    <td style={{ padding:"12px 16px", textAlign:"center" }}>
+                      <span style={{ fontWeight:800, fontSize:"1.1rem", color: ga==="–"?"#cbd5e1":scoreColor(gaNum), fontFamily:"'Playfair Display',serif" }}>{ga}</span>
+                    </td>
+                    <td style={{ padding:"12px 16px", textAlign:"center" }}>
+                      <button onClick={() => onSelectStudent(s)} style={{ padding:"5px 14px", borderRadius:"20px", background:"#dbeafe", color:"#1e40af", border:"none", cursor:"pointer", fontSize:"0.8rem", fontWeight:600 }}>
+                        Ver →
+                      </button>
+                    </td>
+                  </tr>
                 );
               })}
-            </>
-          )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Promedio del curso */}
+      {loaded && courseStudents.length > 0 && allTeacherGrades && (
+        <div style={{ marginTop:"16px", display:"flex", gap:"16px", flexWrap:"wrap" }}>
+          {[1,2,3].map(t => {
+            const allScores = courseStudents
+              .map(s => {
+                const gs = allTeacherGrades.filter(g => g.studentId===s.id && g.subject===subject && g.trimester===t);
+                return gs.length > 0 ? parseFloat(avg(gs.map(g=>g.score))) : null;
+              })
+              .filter(v => v !== null);
+            const courseAvg = allScores.length > 0 ? avg(allScores) : "–";
+            const courseAvgNum = parseFloat(courseAvg);
+            return (
+              <div key={t} className="card" style={{ padding:"14px 20px", flex:1, minWidth:"140px", textAlign:"center", borderTop:`3px solid ${courseAvg==="–"?"#e2e8f0":scoreColor(courseAvgNum)}` }}>
+                <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase", marginBottom:"4px" }}>{trimNames[t-1]}</div>
+                <div style={{ fontSize:"1.6rem", fontWeight:800, color: courseAvg==="–"?"#cbd5e1":scoreColor(courseAvgNum), fontFamily:"'Playfair Display',serif" }}>{courseAvg}</div>
+                <div style={{ fontSize:"0.72rem", color:"#94a3b8" }}>prom. del curso</div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
