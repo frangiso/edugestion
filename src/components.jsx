@@ -82,6 +82,7 @@ export function Top6Tab({ user, profile }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [courseObs, setCourseObs] = useState([]);
+  const [obsAvailable, setObsAvailable] = useState(true);
   const [obsText, setObsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState("");
@@ -90,11 +91,15 @@ export function Top6Tab({ user, profile }) {
 
   async function load() {
     setLoading(true);
-    const [students, grades, obs] = await Promise.all([
+    const [studentsRes, gradesRes, obsRes] = await Promise.allSettled([
       getAllStudents(),
       getAllGrades(),
       getCourseObservations(TOP6_GRADE),
     ]);
+    const students = studentsRes.status === "fulfilled" ? studentsRes.value : [];
+    const grades = gradesRes.status === "fulfilled" ? gradesRes.value : [];
+    setObsAvailable(obsRes.status === "fulfilled");
+    const obs = obsRes.status === "fulfilled" ? obsRes.value : [];
     const courseStudents = students.filter(s => s.grade === TOP6_GRADE);
     const computed = courseStudents.map(s => {
       const sGrades = grades.filter(g => g.studentId === s.id);
@@ -125,18 +130,26 @@ export function Top6Tab({ user, profile }) {
       text: obsText.trim(),
       date: new Date().toISOString().split("T")[0],
     };
-    const id = await createCourseObservation(data);
-    setCourseObs(prev => [{ id, ...data }, ...prev]);
-    setObsText("");
-    setSuccess("✅ Observación guardada");
-    setTimeout(() => setSuccess(""), 2500);
+    try {
+      const id = await createCourseObservation(data);
+      setCourseObs(prev => [{ id, ...data }, ...prev]);
+      setObsText("");
+      setSuccess("✅ Observación guardada");
+      setTimeout(() => setSuccess(""), 2500);
+    } catch {
+      setObsAvailable(false);
+    }
     setSaving(false);
   }
 
   async function removeObs(id) {
     if (!confirm("¿Eliminar esta observación?")) return;
-    await deleteCourseObservation(id, TOP6_GRADE);
-    setCourseObs(prev => prev.filter(o => o.id !== id));
+    try {
+      await deleteCourseObservation(id, TOP6_GRADE);
+      setCourseObs(prev => prev.filter(o => o.id !== id));
+    } catch {
+      setObsAvailable(false);
+    }
   }
 
   if (loading) return <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando...</div>;
@@ -194,31 +207,40 @@ export function Top6Tab({ user, profile }) {
         Observaciones dirigidas a todo el curso, visibles para el director y los profesores.
       </p>
 
-      {success && <div className="fade" style={{ background:"#d1fae5", border:"1px solid #6ee7b7", borderRadius:"10px", padding:"12px 16px", marginBottom:"16px", color:"#065f46", fontWeight:600 }}>{success}</div>}
-
-      <div className="card" style={{ padding:"24px", marginBottom:"20px", border:"2px solid #e0e7ff" }}>
-        <label>Nueva observación general</label>
-        <textarea value={obsText} onChange={e=>setObsText(e.target.value)} placeholder="Ej: El curso mostró buena participación en el acto del 25 de mayo..." rows={3} style={{ width:"100%", border:"1.5px solid #cbd5e1", borderRadius:"10px", padding:"10px 14px", fontSize:"0.9rem", fontFamily:"inherit", resize:"vertical", marginTop:"4px", marginBottom:"12px" }} />
-        <button className="btn-primary" onClick={submitObs} disabled={saving || !obsText.trim()}>Guardar observación →</button>
-      </div>
-
-      {courseObs.length === 0 ? (
-        <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}><p>No hay observaciones generales registradas para este curso.</p></div>
-      ) : (
-        <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
-          {courseObs.map(o => (
-            <div key={o.id} className="card" style={{ padding:"16px 20px", borderLeft:"4px solid #7c3aed" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"8px" }}>
-                <div style={{ fontWeight:700, color:"#7c3aed", fontSize:"0.9rem" }}>Prof. {o.teacherName}</div>
-                <div style={{ display:"flex", alignItems:"center", gap:"12px" }}>
-                  <span style={{ fontSize:"0.78rem", color:"#94a3b8" }}>{o.date}</span>
-                  {(profile.role==="admin" || o.teacherId===user.uid) && <button className="btn-danger" onClick={()=>removeObs(o.id)}>Eliminar</button>}
-                </div>
-              </div>
-              <p style={{ margin:0, color:"#475569", fontSize:"0.9rem", lineHeight:1.5 }}>{o.text}</p>
-            </div>
-          ))}
+      {!obsAvailable ? (
+        <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"2.5rem" }}>🔒</div>
+          <p>Esta función todavía no está habilitada. Hace falta actualizar los permisos (reglas de Firestore) del proyecto.</p>
         </div>
+      ) : (
+        <>
+          {success && <div className="fade" style={{ background:"#d1fae5", border:"1px solid #6ee7b7", borderRadius:"10px", padding:"12px 16px", marginBottom:"16px", color:"#065f46", fontWeight:600 }}>{success}</div>}
+
+          <div className="card" style={{ padding:"24px", marginBottom:"20px", border:"2px solid #e0e7ff" }}>
+            <label>Nueva observación general</label>
+            <textarea value={obsText} onChange={e=>setObsText(e.target.value)} placeholder="Ej: El curso mostró buena participación en el acto del 25 de mayo..." rows={3} style={{ width:"100%", border:"1.5px solid #cbd5e1", borderRadius:"10px", padding:"10px 14px", fontSize:"0.9rem", fontFamily:"inherit", resize:"vertical", marginTop:"4px", marginBottom:"12px" }} />
+            <button className="btn-primary" onClick={submitObs} disabled={saving || !obsText.trim()}>Guardar observación →</button>
+          </div>
+
+          {courseObs.length === 0 ? (
+            <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}><p>No hay observaciones generales registradas para este curso.</p></div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
+              {courseObs.map(o => (
+                <div key={o.id} className="card" style={{ padding:"16px 20px", borderLeft:"4px solid #7c3aed" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"8px" }}>
+                    <div style={{ fontWeight:700, color:"#7c3aed", fontSize:"0.9rem" }}>Prof. {o.teacherName}</div>
+                    <div style={{ display:"flex", alignItems:"center", gap:"12px" }}>
+                      <span style={{ fontSize:"0.78rem", color:"#94a3b8" }}>{o.date}</span>
+                      {(profile.role==="admin" || o.teacherId===user.uid) && <button className="btn-danger" onClick={()=>removeObs(o.id)}>Eliminar</button>}
+                    </div>
+                  </div>
+                  <p style={{ margin:0, color:"#475569", fontSize:"0.9rem", lineHeight:1.5 }}>{o.text}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
