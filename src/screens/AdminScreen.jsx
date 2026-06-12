@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab } from "../components";
+import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab } from "../components";
 import {
   getAllTeachers, getAllGrades, getAllStudents, getAllAttitudes,
   createUser, updateStudent, createStudent,
@@ -96,8 +96,8 @@ export default function AdminScreen({ user, profile, logout }) {
             {tab === "parents"         && <ParentsTab setSaving={setSaving} />}
             {tab === "allgrades"       && <AllGradesTab grades={grades} setGrades={setGrades} setSaving={setSaving} loaded={gradesLoaded} loading={gradesLoading} />}
             {tab === "attitudes"       && <AllAttitudesTab />}
-            {tab === "allobservations" && <AllObservationsTab />}
-            {tab === "top6"            && <Top6Tab user={user} profile={profile} />}
+            {tab === "allobservations" && <AllObservationsTab user={user} profile={profile} />}
+            {tab === "top6"            && <Top6Tab />}
             {tab === "export"         && <ExportTab />}
           </div>
         )}
@@ -636,7 +636,7 @@ function AllAttitudesTab() {
 // ════════════════════════════════════════════════════════════════════
 // OBSERVACIONES
 // ════════════════════════════════════════════════════════════════════
-function AllObservationsTab() {
+function AllObservationsTab({ user, profile }) {
   const [studentFilter, setStudentFilter] = useState(null);
   const [teacherFilter, setTeacherFilter] = useState("");
   const [results, setResults] = useState([]); const [searched, setSearched] = useState(false); const [loading, setLoading] = useState(false);
@@ -679,6 +679,10 @@ function AllObservationsTab() {
           ))}
         </div>
       )}
+
+      <div style={{ marginTop:"32px", paddingTop:"32px", borderTop:"1px solid #e2e8f0" }}>
+        <CourseObservationsTab user={user} profile={profile} />
+      </div>
     </div>
   );
 }

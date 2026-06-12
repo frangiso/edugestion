@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab } from "../components";
+import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab } from "../components";
 import {
   searchStudents, getStudentsByGrade,
   getGradesByTeacherPaged, getMoreGradesByTeacher, getGradesByStudent, getAllGradesByTeacher,
@@ -123,7 +123,7 @@ export default function TeacherScreen({ user, profile, logout }) {
             {tab==="observations" && <ObservationsTab user={user} profile={profile} observations={observations} setObservations={setObservations} setSaving={setSaving} loaded={observationsLoaded} />}
             {tab==="upcoming"     && <UpcomingTab user={user} profile={profile} subject={selectedSubject} setSaving={setSaving} />}
             {tab==="ranking"      && <Ranking grades={grades} subject={selectedSubject} />}
-            {tab==="top6"         && <Top6Tab user={user} profile={profile} />}
+            {tab==="top6"         && <Top6Tab />}
           </div>
         )}
       </div>
@@ -679,6 +679,10 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
           ))}
         </div>
       )}
+
+      <div style={{ marginTop:"32px", paddingTop:"32px", borderTop:"1px solid #e2e8f0" }}>
+        <CourseObservationsTab user={user} profile={profile} />
+      </div>
     </div>
   );
 }
