@@ -74,25 +74,16 @@ export const GLOBAL_STYLES = `
   .fade { animation: fadeIn 0.3s ease; }
 `;
 
-// ─── TOP 6 — Mejores promedios 6° Año + Observaciones generales del curso ──
+// ─── TOP 6 — Mejores promedios 6° Año ──────────────────────────────
 // Compartido entre AdminScreen (director) y TeacherScreen (docente)
 const TOP6_GRADE = "6°";
 const ALL_GRADES = ["1°","2°","3°","4°","5°","6°"];
 
-export function Top6Tab({ user, profile }) {
+export function Top6Tab() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
 
-  const [obsGrade, setObsGrade] = useState(TOP6_GRADE);
-  const [obsLoading, setObsLoading] = useState(true);
-  const [courseObs, setCourseObs] = useState([]);
-  const [obsAvailable, setObsAvailable] = useState(true);
-  const [obsText, setObsText] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [success, setSuccess] = useState("");
-
   useEffect(() => { loadRanking(); }, []);
-  useEffect(() => { loadObs(obsGrade); }, [obsGrade]);
 
   async function loadRanking() {
     setLoading(true);
@@ -114,51 +105,6 @@ export function Top6Tab({ user, profile }) {
       .slice(0,6);
     setRows(computed);
     setLoading(false);
-  }
-
-  async function loadObs(grade) {
-    setObsLoading(true);
-    try {
-      const obs = await getCourseObservations(grade);
-      setCourseObs(obs);
-      setObsAvailable(true);
-    } catch {
-      setCourseObs([]);
-      setObsAvailable(false);
-    }
-    setObsLoading(false);
-  }
-
-  async function submitObs() {
-    if (!obsText.trim()) return;
-    setSaving(true);
-    const data = {
-      grade: obsGrade,
-      teacherId: user.uid,
-      teacherName: profile.name || "",
-      text: obsText.trim(),
-      date: new Date().toISOString().split("T")[0],
-    };
-    try {
-      const id = await createCourseObservation(data);
-      setCourseObs(prev => [{ id, ...data }, ...prev]);
-      setObsText("");
-      setSuccess("✅ Observación guardada");
-      setTimeout(() => setSuccess(""), 2500);
-    } catch {
-      setObsAvailable(false);
-    }
-    setSaving(false);
-  }
-
-  async function removeObs(id) {
-    if (!confirm("¿Eliminar esta observación?")) return;
-    try {
-      await deleteCourseObservation(id, obsGrade);
-      setCourseObs(prev => prev.filter(o => o.id !== id));
-    } catch {
-      setObsAvailable(false);
-    }
   }
 
   if (loading) return <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando...</div>;
@@ -210,7 +156,70 @@ export function Top6Tab({ user, profile }) {
           </table>
         </div>
       )}
+    </div>
+  );
+}
 
+// ─── Observaciones generales por curso ─────────────────────────────
+// Compartido entre AdminScreen (director) y TeacherScreen (docente)
+export function CourseObservationsTab({ user, profile }) {
+  const [obsGrade, setObsGrade] = useState(ALL_GRADES[0]);
+  const [obsLoading, setObsLoading] = useState(true);
+  const [courseObs, setCourseObs] = useState([]);
+  const [obsAvailable, setObsAvailable] = useState(true);
+  const [obsText, setObsText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState("");
+
+  useEffect(() => { loadObs(obsGrade); }, [obsGrade]);
+
+  async function loadObs(grade) {
+    setObsLoading(true);
+    try {
+      const obs = await getCourseObservations(grade);
+      setCourseObs(obs);
+      setObsAvailable(true);
+    } catch {
+      setCourseObs([]);
+      setObsAvailable(false);
+    }
+    setObsLoading(false);
+  }
+
+  async function submitObs() {
+    if (!obsText.trim()) return;
+    setSaving(true);
+    const data = {
+      grade: obsGrade,
+      teacherId: user.uid,
+      teacherName: profile.name || "",
+      text: obsText.trim(),
+      date: new Date().toISOString().split("T")[0],
+    };
+    try {
+      const id = await createCourseObservation(data);
+      setCourseObs(prev => [{ id, ...data }, ...prev]);
+      setObsText("");
+      setSuccess("✅ Observación guardada");
+      setTimeout(() => setSuccess(""), 2500);
+    } catch {
+      setObsAvailable(false);
+    }
+    setSaving(false);
+  }
+
+  async function removeObs(id) {
+    if (!confirm("¿Eliminar esta observación?")) return;
+    try {
+      await deleteCourseObservation(id, obsGrade);
+      setCourseObs(prev => prev.filter(o => o.id !== id));
+    } catch {
+      setObsAvailable(false);
+    }
+  }
+
+  return (
+    <div>
       <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 8px" }}>💬 Observaciones generales por curso</h2>
       <p style={{ color:"#64748b", fontSize:"0.9rem", marginBottom:"16px" }}>
         Observaciones dirigidas a todo un curso, visibles para el director y los profesores.
