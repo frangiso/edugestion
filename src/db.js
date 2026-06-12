@@ -481,6 +481,34 @@ export async function deleteObservation(id) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// OBSERVACIONES GENERALES DEL CURSO
+// Colección: courseObservations
+// Campos: grade, teacherId, teacherName, text, date
+// ═══════════════════════════════════════════════════════════════════
+export async function getCourseObservations(grade) {
+  const key = `course_${grade}`;
+  if (cache.observations[key]) return cache.observations[key];
+  const snap = await getDocs(query(collection(db,"courseObservations"), where("grade","==",grade), orderBy("date","desc")));
+  const results = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+  cache.observations[key] = results;
+  return results;
+}
+
+export async function createCourseObservation(data) {
+  const ref = await addDoc(collection(db,"courseObservations"), { ...data, createdAt: serverTimestamp() });
+  const newObs = { id:ref.id, ...data };
+  const key = `course_${data.grade}`;
+  if (cache.observations[key]) cache.observations[key] = [newObs, ...cache.observations[key]];
+  return ref.id;
+}
+
+export async function deleteCourseObservation(id, grade) {
+  await deleteDoc(doc(db,"courseObservations",id));
+  const key = `course_${grade}`;
+  if (cache.observations[key]) cache.observations[key] = cache.observations[key].filter(o=>o.id!==id);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // PRÓXIMAS EVALUACIONES
 // ═══════════════════════════════════════════════════════════════════
 export async function getUpcomingByTeacher(teacherId) {
