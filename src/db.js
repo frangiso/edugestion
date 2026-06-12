@@ -488,8 +488,8 @@ export async function deleteObservation(id) {
 export async function getCourseObservations(grade) {
   const key = `course_${grade}`;
   if (cache.observations[key]) return cache.observations[key];
-  const snap = await getDocs(query(collection(db,"courseObservations"), where("grade","==",grade), orderBy("date","desc")));
-  const results = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+  const snap = await getDocs(query(collection(db,"courseObservations"), where("grade","==",grade)));
+  const results = snap.docs.map(d => ({ id:d.id, ...d.data() })).sort((a,b) => b.date.localeCompare(a.date));
   cache.observations[key] = results;
   return results;
 }
