@@ -77,29 +77,26 @@ export const GLOBAL_STYLES = `
 // ─── TOP 6 — Mejores promedios 6° Año + Observaciones generales del curso ──
 // Compartido entre AdminScreen (director) y TeacherScreen (docente)
 const TOP6_GRADE = "6°";
+const ALL_GRADES = ["1°","2°","3°","4°","5°","6°"];
 
 export function Top6Tab({ user, profile }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
+
+  const [obsGrade, setObsGrade] = useState(TOP6_GRADE);
+  const [obsLoading, setObsLoading] = useState(true);
   const [courseObs, setCourseObs] = useState([]);
   const [obsAvailable, setObsAvailable] = useState(true);
   const [obsText, setObsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState("");
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { loadRanking(); }, []);
+  useEffect(() => { loadObs(obsGrade); }, [obsGrade]);
 
-  async function load() {
+  async function loadRanking() {
     setLoading(true);
-    const [studentsRes, gradesRes, obsRes] = await Promise.allSettled([
-      getAllStudents(),
-      getAllGrades(),
-      getCourseObservations(TOP6_GRADE),
-    ]);
-    const students = studentsRes.status === "fulfilled" ? studentsRes.value : [];
-    const grades = gradesRes.status === "fulfilled" ? gradesRes.value : [];
-    setObsAvailable(obsRes.status === "fulfilled");
-    const obs = obsRes.status === "fulfilled" ? obsRes.value : [];
+    const [students, grades] = await Promise.all([getAllStudents(), getAllGrades()]);
     const courseStudents = students.filter(s => s.grade === TOP6_GRADE);
     const computed = courseStudents.map(s => {
       const sGrades = grades.filter(g => g.studentId === s.id);
@@ -116,15 +113,27 @@ export function Top6Tab({ user, profile }) {
       .sort((a,b) => b.finalNum - a.finalNum)
       .slice(0,6);
     setRows(computed);
-    setCourseObs(obs);
     setLoading(false);
+  }
+
+  async function loadObs(grade) {
+    setObsLoading(true);
+    try {
+      const obs = await getCourseObservations(grade);
+      setCourseObs(obs);
+      setObsAvailable(true);
+    } catch {
+      setCourseObs([]);
+      setObsAvailable(false);
+    }
+    setObsLoading(false);
   }
 
   async function submitObs() {
     if (!obsText.trim()) return;
     setSaving(true);
     const data = {
-      grade: TOP6_GRADE,
+      grade: obsGrade,
       teacherId: user.uid,
       teacherName: profile.name || "",
       text: obsText.trim(),
@@ -145,7 +154,7 @@ export function Top6Tab({ user, profile }) {
   async function removeObs(id) {
     if (!confirm("¿Eliminar esta observación?")) return;
     try {
-      await deleteCourseObservation(id, TOP6_GRADE);
+      await deleteCourseObservation(id, obsGrade);
       setCourseObs(prev => prev.filter(o => o.id !== id));
     } catch {
       setObsAvailable(false);
@@ -202,12 +211,21 @@ export function Top6Tab({ user, profile }) {
         </div>
       )}
 
-      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 8px" }}>💬 Observaciones generales — 6° Año</h2>
+      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 8px" }}>💬 Observaciones generales por curso</h2>
       <p style={{ color:"#64748b", fontSize:"0.9rem", marginBottom:"16px" }}>
-        Observaciones dirigidas a todo el curso, visibles para el director y los profesores.
+        Observaciones dirigidas a todo un curso, visibles para el director y los profesores.
       </p>
 
-      {!obsAvailable ? (
+      <div style={{ maxWidth:"220px", marginBottom:"20px" }}>
+        <label>Curso</label>
+        <select value={obsGrade} onChange={e=>setObsGrade(e.target.value)}>
+          {ALL_GRADES.map(g => <option key={g} value={g}>{g} Año</option>)}
+        </select>
+      </div>
+
+      {obsLoading ? (
+        <div style={{ textAlign:"center", padding:"40px", color:"#94a3b8" }}>Cargando observaciones...</div>
+      ) : !obsAvailable ? (
         <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}>
           <div style={{ fontSize:"2.5rem" }}>🔒</div>
           <p>Esta función todavía no está habilitada. Hace falta actualizar los permisos (reglas de Firestore) del proyecto.</p>
@@ -217,13 +235,13 @@ export function Top6Tab({ user, profile }) {
           {success && <div className="fade" style={{ background:"#d1fae5", border:"1px solid #6ee7b7", borderRadius:"10px", padding:"12px 16px", marginBottom:"16px", color:"#065f46", fontWeight:600 }}>{success}</div>}
 
           <div className="card" style={{ padding:"24px", marginBottom:"20px", border:"2px solid #e0e7ff" }}>
-            <label>Nueva observación general</label>
+            <label>Nueva observación para {obsGrade} Año</label>
             <textarea value={obsText} onChange={e=>setObsText(e.target.value)} placeholder="Ej: El curso mostró buena participación en el acto del 25 de mayo..." rows={3} style={{ width:"100%", border:"1.5px solid #cbd5e1", borderRadius:"10px", padding:"10px 14px", fontSize:"0.9rem", fontFamily:"inherit", resize:"vertical", marginTop:"4px", marginBottom:"12px" }} />
             <button className="btn-primary" onClick={submitObs} disabled={saving || !obsText.trim()}>Guardar observación →</button>
           </div>
 
           {courseObs.length === 0 ? (
-            <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}><p>No hay observaciones generales registradas para este curso.</p></div>
+            <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}><p>No hay observaciones generales registradas para {obsGrade} Año.</p></div>
           ) : (
             <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
               {courseObs.map(o => (
