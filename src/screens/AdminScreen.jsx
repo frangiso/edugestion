@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor } from "../components";
+import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab } from "../components";
 import {
   getAllTeachers, getAllGrades, getAllStudents, getAllAttitudes,
   createUser, updateStudent, createStudent,
@@ -80,6 +80,7 @@ export default function AdminScreen({ user, profile, logout }) {
             ["allgrades","📋 Notas"],
             ["attitudes","🎯 Actitudinales"],
             ["allobservations","💬 Observaciones"],
+            ["top6","🏆 Top 6° Año"],
             ["export","📥 Exportar Excel"],
           ].map(([k,l]) => (
             <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
@@ -96,6 +97,7 @@ export default function AdminScreen({ user, profile, logout }) {
             {tab === "allgrades"       && <AllGradesTab grades={grades} setGrades={setGrades} setSaving={setSaving} loaded={gradesLoaded} loading={gradesLoading} />}
             {tab === "attitudes"       && <AllAttitudesTab />}
             {tab === "allobservations" && <AllObservationsTab />}
+            {tab === "top6"            && <Top6Tab user={user} profile={profile} />}
             {tab === "export"         && <ExportTab />}
           </div>
         )}

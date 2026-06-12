@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor } from "../components";
+import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab } from "../components";
 import {
   searchStudents, getStudentsByGrade,
   getGradesByTeacherPaged, getMoreGradesByTeacher, getGradesByStudent, getAllGradesByTeacher,
@@ -108,6 +108,7 @@ export default function TeacherScreen({ user, profile, logout }) {
             ["observations","💬 Observaciones"],
             ["upcoming","📅 Próximas eval."],
             ["ranking","📊 Rendimiento"],
+            ["top6","🏆 Top 6° Año"],
           ].map(([k,l])=>(
             <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
           ))}
@@ -122,6 +123,7 @@ export default function TeacherScreen({ user, profile, logout }) {
             {tab==="observations" && <ObservationsTab user={user} profile={profile} observations={observations} setObservations={setObservations} setSaving={setSaving} loaded={observationsLoaded} />}
             {tab==="upcoming"     && <UpcomingTab user={user} profile={profile} subject={selectedSubject} setSaving={setSaving} />}
             {tab==="ranking"      && <Ranking grades={grades} subject={selectedSubject} />}
+            {tab==="top6"         && <Top6Tab user={user} profile={profile} />}
           </div>
         )}
       </div>

@@ -26,5 +26,15 @@ service cloud.firestore {
         resource.data.teacherId == request.auth.uid
       );
     }
+
+    // Observaciones generales del curso: profesores y director escriben, todos leen
+    match /courseObservations/{obsId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['teacher','admin'];
+      allow delete: if request.auth != null && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        resource.data.teacherId == request.auth.uid
+      );
+    }
   }
 }
