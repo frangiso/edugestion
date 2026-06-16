@@ -78,6 +78,7 @@ export default function AdminScreen({ user, profile, logout }) {
             ["teachers","👨‍🏫 Profesores"],
             ["parents","👨‍👩‍👧 Tutores"],
             ["allgrades","📋 Notas"],
+            ["coursereport","🏫 Por Curso"],
             ["attitudes","🎯 Actitudinales"],
             ["allobservations","💬 Observaciones"],
             ["top6","🏆 Top 6° Año"],
@@ -95,6 +96,7 @@ export default function AdminScreen({ user, profile, logout }) {
             {tab === "teachers"        && <TeachersTab teachers={teachers} setTeachers={setTeachers} setSaving={setSaving} />}
             {tab === "parents"         && <ParentsTab setSaving={setSaving} />}
             {tab === "allgrades"       && <AllGradesTab grades={grades} setGrades={setGrades} setSaving={setSaving} loaded={gradesLoaded} loading={gradesLoading} />}
+            {tab === "coursereport"    && <CourseReportTab />}
             {tab === "attitudes"       && <AllAttitudesTab />}
             {tab === "allobservations" && <AllObservationsTab user={user} profile={profile} />}
             {tab === "top6"            && <Top6Tab />}
@@ -627,6 +629,146 @@ function AllAttitudesTab() {
               })}
             </>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// INFORME POR CURSO
+// Promedio de cada alumno por materia y por trimestre
+// ════════════════════════════════════════════════════════════════════
+function CourseReportTab() {
+  const [selectedGrade, setSelectedGrade] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [report, setReport] = useState([]);
+  const [nameFilter, setNameFilter] = useState("");
+
+  async function load(grade) {
+    setLoading(true);
+    const [allStudents, allGrades] = await Promise.all([getAllStudents(), getAllGrades()]);
+    const students = allStudents.filter(s => s.grade === grade).sort((a,b) => a.name.localeCompare(b.name));
+    const studentIds = new Set(students.map(s => s.id));
+    const gradeRecords = allGrades.filter(g => studentIds.has(g.studentId));
+
+    const data = students.map(student => {
+      const sg = gradeRecords.filter(g => g.studentId === student.id);
+      const subjectList = [...new Set(sg.map(g => g.subject))].sort();
+      const subjects = subjectList.map(subject => {
+        const sub = sg.filter(g => g.subject === subject);
+        const t1 = avg(sub.filter(g => g.trimester === 1).map(g => g.score));
+        const t2 = avg(sub.filter(g => g.trimester === 2).map(g => g.score));
+        const t3 = avg(sub.filter(g => g.trimester === 3).map(g => g.score));
+        const final = avg(sub.map(g => g.score));
+        return { subject, t1, t2, t3, final, finalNum: sub.length ? parseFloat(avg(sub.map(g => g.score))) : null };
+      });
+      const allScores = sg.map(g => g.score);
+      return { student, subjects, globalAvg: avg(allScores), globalAvgNum: allScores.length ? parseFloat(avg(allScores)) : null };
+    });
+    setReport(data);
+    setLoading(false);
+  }
+
+  function handleGradeChange(g) {
+    setSelectedGrade(g);
+    setNameFilter("");
+    if (g) load(g);
+    else setReport([]);
+  }
+
+  const filtered = report.filter(r => !nameFilter || r.student.name.toLowerCase().includes(nameFilter.toLowerCase()));
+
+  return (
+    <div>
+      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 8px" }}>🏫 Informe por Curso</h2>
+      <p style={{ color:"#64748b", fontSize:"0.9rem", marginBottom:"20px" }}>
+        Promedio de cada alumno por materia y trimestre dentro del curso seleccionado.
+      </p>
+
+      <div style={{ display:"flex", gap:"16px", flexWrap:"wrap", marginBottom:"24px", alignItems:"flex-end" }}>
+        <div style={{ minWidth:"180px" }}>
+          <label>Curso</label>
+          <select value={selectedGrade} onChange={e=>handleGradeChange(e.target.value)}>
+            <option value="">Seleccionar curso...</option>
+            {GRADES.map(g => <option key={g} value={g}>{g} Año</option>)}
+          </select>
+        </div>
+        {report.length > 0 && (
+          <div style={{ flex:1, minWidth:"200px" }}>
+            <label>Buscar alumno</label>
+            <input value={nameFilter} onChange={e=>setNameFilter(e.target.value)} placeholder="Filtrar por nombre..." />
+          </div>
+        )}
+      </div>
+
+      {!selectedGrade && (
+        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"3rem" }}>🏫</div>
+          <p>Seleccioná un curso para ver el informe.</p>
+        </div>
+      )}
+
+      {loading && <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando...</div>}
+
+      {!loading && selectedGrade && report.length === 0 && (
+        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"3rem" }}>📭</div>
+          <p>No hay alumnos registrados para {selectedGrade} Año.</p>
+        </div>
+      )}
+
+      {!loading && filtered.map(({ student, subjects, globalAvg, globalAvgNum }) => (
+        <div key={student.id} className="card" style={{ marginBottom:"16px" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 20px", borderBottom:"1px solid #f1f5f9" }}>
+            <div style={{ fontWeight:700, fontSize:"1rem", color:"#1e293b" }}>{student.name}</div>
+            {globalAvgNum !== null && (
+              <span style={{ fontWeight:800, fontSize:"1.05rem", color:scoreColor(globalAvgNum), fontFamily:"'Playfair Display',serif" }}>
+                Promedio general: {globalAvg}
+              </span>
+            )}
+          </div>
+          {subjects.length === 0 ? (
+            <div style={{ padding:"16px 20px", color:"#94a3b8", fontSize:"0.9rem" }}>Sin notas cargadas</div>
+          ) : (
+            <div style={{ overflowX:"auto" }}>
+              <table style={{ width:"100%", borderCollapse:"collapse", minWidth:"480px" }}>
+                <thead>
+                  <tr style={{ background:"#f8fafc" }}>
+                    <th style={{ padding:"10px 16px", textAlign:"left", fontWeight:600, fontSize:"0.8rem", color:"#475569", textTransform:"uppercase", letterSpacing:"0.5px" }}>Materia</th>
+                    <th style={{ padding:"10px 12px", textAlign:"center", fontWeight:600, fontSize:"0.8rem", color:"#475569", textTransform:"uppercase", letterSpacing:"0.5px" }}>1er Trim.</th>
+                    <th style={{ padding:"10px 12px", textAlign:"center", fontWeight:600, fontSize:"0.8rem", color:"#475569", textTransform:"uppercase", letterSpacing:"0.5px" }}>2do Trim.</th>
+                    <th style={{ padding:"10px 12px", textAlign:"center", fontWeight:600, fontSize:"0.8rem", color:"#475569", textTransform:"uppercase", letterSpacing:"0.5px" }}>3er Trim.</th>
+                    <th style={{ padding:"10px 12px", textAlign:"center", fontWeight:600, fontSize:"0.8rem", color:"#475569", textTransform:"uppercase", letterSpacing:"0.5px" }}>Promedio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subjects.map((s, i) => (
+                    <tr key={s.subject} style={{ borderTop:"1px solid #f1f5f9", background: i%2===0?"white":"#fafafa" }}>
+                      <td style={{ padding:"10px 16px", fontSize:"0.88rem", color:"#334155", fontWeight:500 }}>{s.subject}</td>
+                      {[s.t1, s.t2, s.t3].map((v, ti) => {
+                        const vNum = parseFloat(v);
+                        return (
+                          <td key={ti} style={{ padding:"10px 12px", textAlign:"center" }}>
+                            <span style={{ fontWeight:600, color: v==="–"?"#cbd5e1":scoreColor(vNum), fontSize:"0.9rem" }}>{v}</span>
+                          </td>
+                        );
+                      })}
+                      <td style={{ padding:"10px 12px", textAlign:"center" }}>
+                        <span style={{ fontWeight:700, color: s.finalNum===null?"#cbd5e1":scoreColor(s.finalNum), fontSize:"0.92rem" }}>{s.final}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {!loading && nameFilter && filtered.length === 0 && report.length > 0 && (
+        <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8" }}>
+          <p>No se encontraron alumnos con ese nombre.</p>
         </div>
       )}
     </div>
