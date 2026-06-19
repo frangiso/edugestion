@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab } from "../components";
+import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab, analyzeStudentRisk, RiskAlertsPanel } from "../components";
 import {
   getAllTeachers, getAllGrades, getAllStudents, getAllAttitudes,
   createUser, updateStudent, createStudent,
@@ -79,6 +79,7 @@ export default function AdminScreen({ user, profile, logout }) {
             ["parents","👨‍👩‍👧 Tutores"],
             ["allgrades","📋 Notas"],
             ["coursereport","🏫 Por Curso"],
+            ["alertas","⚠️ En Riesgo"],
             ["attitudes","🎯 Actitudinales"],
             ["allobservations","💬 Observaciones"],
             ["top6","🏆 Top 6° Año"],
@@ -97,6 +98,7 @@ export default function AdminScreen({ user, profile, logout }) {
             {tab === "parents"         && <ParentsTab setSaving={setSaving} />}
             {tab === "allgrades"       && <AllGradesTab grades={grades} setGrades={setGrades} setSaving={setSaving} loaded={gradesLoaded} loading={gradesLoading} />}
             {tab === "coursereport"    && <CourseReportTab />}
+            {tab === "alertas"         && <RiskAlertsTab />}
             {tab === "attitudes"       && <AllAttitudesTab />}
             {tab === "allobservations" && <AllObservationsTab user={user} profile={profile} />}
             {tab === "top6"            && <Top6Tab />}
@@ -633,6 +635,31 @@ function AllAttitudesTab() {
       )}
     </div>
   );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// ALERTAS DE RIESGO ACADÉMICO
+// ════════════════════════════════════════════════════════════════════
+function RiskAlertsTab() {
+  const [loading, setLoading] = useState(true);
+  const [analyses, setAnalyses] = useState([]);
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    const [students, grades] = await Promise.all([getAllStudents(), getAllGrades()]);
+    const map = {};
+    grades.forEach(g => { if (!map[g.studentId]) map[g.studentId]=[]; map[g.studentId].push(g); });
+    const ORDER = { critical:0, warning:1, ok:2 };
+    const result = students
+      .filter(s => map[s.id]?.length)
+      .map(s => analyzeStudentRisk(s, map[s.id]))
+      .sort((a,b) => ORDER[a.level]-ORDER[b.level] || (a.globalAvg??10)-(b.globalAvg??10));
+    setAnalyses(result);
+    setLoading(false);
+  }
+
+  return <RiskAlertsPanel analyses={analyses} loading={loading} />;
 }
 
 // ════════════════════════════════════════════════════════════════════

@@ -160,6 +160,218 @@ export function Top6Tab() {
   );
 }
 
+// ─── Análisis de riesgo académico ────────────────────────────────
+export function analyzeStudentRisk(student, grades) {
+  if (!grades.length) return null;
+  const subjects = [...new Set(grades.map(g => g.subject))].sort();
+  const subjectAnalysis = subjects.map(subject => {
+    const sg = grades.filter(g => g.subject === subject);
+    const t = [1,2,3].map(trim => {
+      const scores = sg.filter(g => g.trimester === trim).map(g => g.score);
+      return scores.length ? parseFloat((scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(2)) : null;
+    });
+    const allScores = sg.map(g => g.score);
+    const subAvg = allScores.length ? parseFloat((allScores.reduce((a,b)=>a+b,0)/allScores.length).toFixed(2)) : null;
+    const drops = [];
+    [[0,1],[1,2]].forEach(([a,b]) => {
+      if (t[a]!==null && t[b]!==null) {
+        const drop = parseFloat((t[a]-t[b]).toFixed(2));
+        if (drop > 0.5) drops.push({ from:a+1, to:b+1, drop });
+      }
+    });
+    // Tendencia por evaluación individual (regresión lineal sobre notas ordenadas por fecha)
+    const sorted = [...sg].sort((a,b) => (a.date||"").localeCompare(b.date||""));
+    let evalSlope = null;
+    let evalDrop = null;
+    if (sorted.length >= 3) {
+      const n = sorted.length;
+      const ys = sorted.map(g => g.score);
+      const xMean = (n - 1) / 2;
+      const yMean = ys.reduce((a,b)=>a+b,0) / n;
+      const num = ys.reduce((sum, y, i) => sum + (i - xMean) * (y - yMean), 0);
+      const den = ys.reduce((sum, _, i) => sum + (i - xMean) ** 2, 0);
+      evalSlope = den > 0 ? parseFloat((num / den).toFixed(3)) : null;
+    }
+    if (sorted.length >= 4) {
+      const half = Math.floor(sorted.length / 2);
+      const f = sorted.slice(0, half).map(g => g.score);
+      const s = sorted.slice(half).map(g => g.score);
+      evalDrop = parseFloat(((f.reduce((a,b)=>a+b,0)/f.length) - (s.reduce((a,b)=>a+b,0)/s.length)).toFixed(2));
+    }
+    const evalDeclining = (evalSlope !== null && evalSlope < -0.5) || (evalDrop !== null && evalDrop >= 1.5);
+    return { subject, t, avg:subAvg, failing:subAvg!==null&&subAvg<6, declining:drops.length>0, drops, bigDrop:drops.some(d=>d.drop>=2), evalSlope, evalDrop, evalDeclining };
+  });
+  const allScores = grades.map(g => g.score);
+  const globalAvg = allScores.length ? parseFloat((allScores.reduce((a,b)=>a+b,0)/allScores.length).toFixed(2)) : null;
+  const failingSubjects       = subjectAnalysis.filter(s => s.failing);
+  const decliningSubjects     = subjectAnalysis.filter(s => s.declining);
+  const bigDropSubjects       = subjectAnalysis.filter(s => s.bigDrop);
+  const evalDecliningSubjects = subjectAnalysis.filter(s => s.evalDeclining);
+  let level = "ok";
+  if (
+    (globalAvg!==null&&globalAvg<5) ||
+    failingSubjects.length>=3 ||
+    (bigDropSubjects.length>0&&failingSubjects.length>0) ||
+    (evalDecliningSubjects.length>0&&failingSubjects.length>0)
+  ) level = "critical";
+  else if (
+    (globalAvg!==null&&globalAvg<6) ||
+    failingSubjects.length>=1 ||
+    decliningSubjects.length>=2 ||
+    bigDropSubjects.length>0 ||
+    evalDecliningSubjects.length>=2 ||
+    (evalDecliningSubjects.length>=1&&decliningSubjects.length>=1)
+  ) level = "warning";
+  const parts = [];
+  if (level==="critical") parts.push("Requiere atención urgente.");
+  else if (level==="warning") parts.push("Requiere seguimiento.");
+  if (failingSubjects.length>0) parts.push(`Reprobando: ${failingSubjects.map(s=>s.subject).join(", ")}.`);
+  if (bigDropSubjects.length>0) {
+    const msgs = bigDropSubjects.flatMap(s=>s.drops.filter(d=>d.drop>=2).map(d=>`${s.subject} (T${d.from}→T${d.to}: −${d.drop})`));
+    parts.push(`Caída brusca entre trimestres en ${msgs.join(", ")}.`);
+  } else if (decliningSubjects.length>0&&failingSubjects.length===0) {
+    parts.push(`Bajando entre trimestres: ${decliningSubjects.map(s=>s.subject).slice(0,3).join(", ")}.`);
+  }
+  if (evalDecliningSubjects.length>0) {
+    parts.push(`Notas en descenso en evaluaciones de: ${evalDecliningSubjects.map(s=>s.subject).slice(0,3).join(", ")}.`);
+  }
+  return { student, globalAvg, subjectAnalysis, failingSubjects, decliningSubjects, bigDropSubjects, evalDecliningSubjects, level, summary:parts.join(" ")||"Rendimiento dentro de lo esperado." };
+}
+
+const RISK_CFG = {
+  critical: { label:"🔴 Urgente",     color:"#dc2626", bg:"#fef2f2", border:"#fca5a5" },
+  warning:  { label:"🟡 Seguimiento", color:"#d97706", bg:"#fffbeb", border:"#fcd34d" },
+  ok:       { label:"🟢 OK",           color:"#059669", bg:"#f0fdf4", border:"#6ee7b7" },
+};
+
+export function RiskAlertsPanel({ analyses, loading }) {
+  const [gradeFilter, setGradeFilter] = useState("");
+  const [expanded, setExpanded] = useState({});
+  const [showOk, setShowOk] = useState(false);
+
+  if (loading) return <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Analizando datos...</div>;
+
+  const visible = analyses.filter(a => !gradeFilter || a.student.grade===gradeFilter);
+  const critical = visible.filter(a=>a.level==="critical");
+  const warning  = visible.filter(a=>a.level==="warning");
+  const okList   = visible.filter(a=>a.level==="ok");
+  const atRisk   = [...critical,...warning];
+
+  return (
+    <div>
+      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 8px" }}>🤖 Detección de riesgo académico</h2>
+      <p style={{ color:"#64748b", fontSize:"0.9rem", marginBottom:"20px" }}>
+        Alumnos con bajo rendimiento, materias reprobadas o tendencia descendente detectados automáticamente.
+      </p>
+
+      <div style={{ display:"flex", gap:"10px", flexWrap:"wrap", marginBottom:"24px", alignItems:"center" }}>
+        <div style={{ minWidth:"160px" }}>
+          <select value={gradeFilter} onChange={e=>setGradeFilter(e.target.value)}>
+            <option value="">Todos los cursos</option>
+            {["1°","2°","3°","4°","5°","6°"].map(g=><option key={g} value={g}>{g} Año</option>)}
+          </select>
+        </div>
+        {[
+          { bg:"#fef2f2", color:"#dc2626", border:"#fca5a5", label:`🔴 ${critical.length} urgente${critical.length!==1?"s":""}` },
+          { bg:"#fffbeb", color:"#d97706", border:"#fcd34d", label:`🟡 ${warning.length} en seguimiento` },
+          { bg:"#f0fdf4", color:"#059669", border:"#6ee7b7", label:`🟢 ${okList.length} sin alerta` },
+        ].map(p=>(
+          <span key={p.label} style={{ background:p.bg, color:p.color, border:`1px solid ${p.border}`, borderRadius:"20px", padding:"4px 12px", fontSize:"0.8rem", fontWeight:700 }}>{p.label}</span>
+        ))}
+      </div>
+
+      {atRisk.length===0 && (
+        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"3rem" }}>🎉</div>
+          <p>No hay alumnos con alertas{gradeFilter?` en ${gradeFilter} Año`:""}. {analyses.length===0?"Cargá evaluaciones para ver el análisis.":""}</p>
+        </div>
+      )}
+
+      {atRisk.map(a => {
+        const cfg = RISK_CFG[a.level];
+        const isOpen = expanded[a.student.id];
+        return (
+          <div key={a.student.id} className="card" style={{ marginBottom:"12px", border:`1.5px solid ${cfg.border}`, overflow:"hidden" }}>
+            <div style={{ padding:"16px 20px", background:cfg.bg, display:"flex", justifyContent:"space-between", alignItems:"flex-start", cursor:"pointer" }} onClick={()=>setExpanded(p=>({...p,[a.student.id]:!p[a.student.id]}))}>
+              <div style={{ flex:1 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"4px", flexWrap:"wrap" }}>
+                  <span style={{ fontWeight:700, fontSize:"1rem", color:"#1e293b" }}>{a.student.name}</span>
+                  {a.student.grade&&<span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{a.student.grade} Año</span>}
+                  <span style={{ fontWeight:700, color:cfg.color, fontSize:"0.82rem" }}>{cfg.label}</span>
+                </div>
+                <div style={{ fontSize:"0.88rem", color:"#475569", lineHeight:1.4 }}>{a.summary}</div>
+              </div>
+              <div style={{ textAlign:"right", marginLeft:"16px", flexShrink:0 }}>
+                {a.globalAvg!==null&&<div style={{ fontWeight:800, fontSize:"1.3rem", color:scoreColor(a.globalAvg), fontFamily:"'Playfair Display',serif" }}>{a.globalAvg}</div>}
+                <div style={{ fontSize:"0.7rem", color:"#94a3b8" }}>prom. general</div>
+                <div style={{ fontSize:"0.72rem", color:"#94a3b8", marginTop:"4px" }}>{isOpen?"▲ ocultar":"▼ detalle"}</div>
+              </div>
+            </div>
+
+            {isOpen&&(
+              <div style={{ padding:"16px 20px", overflowX:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", minWidth:"520px", fontSize:"0.84rem" }}>
+                  <thead>
+                    <tr style={{ background:"#f8fafc" }}>
+                      <th style={{ padding:"8px 12px", textAlign:"left", fontWeight:600, color:"#475569" }}>Materia</th>
+                      <th style={{ padding:"8px 12px", textAlign:"center", fontWeight:600, color:"#475569" }}>T1</th>
+                      <th style={{ padding:"8px 12px", textAlign:"center", fontWeight:600, color:"#475569" }}>T2</th>
+                      <th style={{ padding:"8px 12px", textAlign:"center", fontWeight:600, color:"#475569" }}>T3</th>
+                      <th style={{ padding:"8px 12px", textAlign:"center", fontWeight:600, color:"#475569" }}>Prom.</th>
+                      <th style={{ padding:"8px 12px", textAlign:"center", fontWeight:600, color:"#475569" }}>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {a.subjectAnalysis.slice().sort((x,y)=>(x.avg??10)-(y.avg??10)).map(s=>(
+                      <tr key={s.subject} style={{ borderTop:"1px solid #f1f5f9", background:s.failing?"#fff5f5":s.declining||s.evalDeclining?"#fffbeb":"white" }}>
+                        <td style={{ padding:"8px 12px", fontWeight:s.failing||s.declining||s.evalDeclining?700:400, color:"#1e293b" }}>{s.subject}</td>
+                        {s.t.map((v,i)=>(
+                          <td key={i} style={{ padding:"8px 12px", textAlign:"center" }}>
+                            {v!==null?<span style={{ fontWeight:600, color:scoreColor(v) }}>{v}</span>:<span style={{ color:"#cbd5e1" }}>–</span>}
+                          </td>
+                        ))}
+                        <td style={{ padding:"8px 12px", textAlign:"center" }}>
+                          {s.avg!==null?<span style={{ fontWeight:800, color:scoreColor(s.avg) }}>{s.avg}</span>:<span style={{ color:"#cbd5e1" }}>–</span>}
+                        </td>
+                        <td style={{ padding:"8px 12px", textAlign:"center", fontSize:"0.78rem", fontWeight:700 }}>
+                          <div style={{ display:"flex", flexDirection:"column", gap:"2px", alignItems:"center" }}>
+                            {s.failing&&<span style={{ color:"#dc2626" }}>Reprobando</span>}
+                            {s.bigDrop&&<span style={{ color:"#d97706" }}>⬇ Caída trimestral</span>}
+                            {!s.bigDrop&&s.declining&&<span style={{ color:"#f59e0b" }}>↘ Baja trimestral</span>}
+                            {s.evalDeclining&&<span style={{ color:"#9333ea" }}>📉 Descenso en notas</span>}
+                            {!s.failing&&!s.bigDrop&&!s.declining&&!s.evalDeclining&&<span style={{ color:"#10b981" }}>✓ OK</span>}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {okList.length>0&&(
+        <>
+          <button onClick={()=>setShowOk(p=>!p)} style={{ background:"none", border:"1px solid #e2e8f0", borderRadius:"8px", padding:"8px 16px", cursor:"pointer", color:"#64748b", fontSize:"0.85rem", marginTop:"8px" }}>
+            {showOk?"Ocultar alumnos sin alerta":`Ver ${okList.length} alumno${okList.length!==1?"s":""} sin alerta`}
+          </button>
+          {showOk&&okList.map(a=>(
+            <div key={a.student.id} className="card" style={{ marginBottom:"8px", marginTop:"8px", padding:"12px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", border:"1px solid #d1fae5" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
+                <span style={{ fontWeight:600, color:"#1e293b" }}>{a.student.name}</span>
+                {a.student.grade&&<span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{a.student.grade} Año</span>}
+              </div>
+              {a.globalAvg!==null&&<span style={{ fontWeight:800, color:scoreColor(a.globalAvg), fontFamily:"'Playfair Display',serif" }}>{a.globalAvg}</span>}
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Observaciones generales por curso ─────────────────────────────
 // Compartido entre AdminScreen (director) y TeacherScreen (docente)
 export function CourseObservationsTab({ user, profile }) {
