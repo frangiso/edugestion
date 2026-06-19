@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab } from "../components";
+import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab, analyzeStudentRisk, RiskAlertsPanel } from "../components";
 import {
   searchStudents, getStudentsByGrade,
   getGradesByTeacherPaged, getMoreGradesByTeacher, getGradesByStudent, getAllGradesByTeacher,
@@ -106,6 +106,7 @@ export default function TeacherScreen({ user, profile, logout }) {
             ["student","🔍 Ver alumno"],
             ["attitudes","🎯 Actitudinales"],
             ["observations","💬 Observaciones"],
+            ["alertas","⚠️ Alertas"],
             ["upcoming","📅 Próximas eval."],
             ["ranking","📊 Rendimiento"],
             ["top6","🏆 Top 6° Año"],
@@ -121,6 +122,7 @@ export default function TeacherScreen({ user, profile, logout }) {
             {tab==="student"      && <StudentGradesTab user={user} subject={selectedSubject} setSaving={setSaving} />}
             {tab==="attitudes"    && <AttitudesTab user={user} profile={profile} subject={selectedSubject} attitudes={attitudes} setAttitudes={setAttitudes} setSaving={setSaving} loaded={attitudesLoaded} />}
             {tab==="observations" && <ObservationsTab user={user} profile={profile} observations={observations} setObservations={setObservations} setSaving={setSaving} loaded={observationsLoaded} />}
+            {tab==="alertas"      && <TeacherRiskTab user={user} />}
             {tab==="upcoming"     && <UpcomingTab user={user} profile={profile} subject={selectedSubject} setSaving={setSaving} />}
             {tab==="ranking"      && <Ranking grades={grades} subject={selectedSubject} />}
             {tab==="top6"         && <Top6Tab />}
@@ -688,6 +690,37 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// ALERTAS DE RIESGO ACADÉMICO (vista docente)
+// ═══════════════════════════════════════════════════════════════════
+function TeacherRiskTab({ user }) {
+  const [loading, setLoading] = useState(true);
+  const [analyses, setAnalyses] = useState([]);
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    const teacherGrades = await getAllGradesByTeacher(user.uid);
+    const studentMap = {};
+    teacherGrades.forEach(g => {
+      if (!studentMap[g.studentId]) {
+        studentMap[g.studentId] = {
+          student: { id:g.studentId, name:g.studentName||"Desconocido", grade:g.studentGrade||"" },
+          grades: [],
+        };
+      }
+      studentMap[g.studentId].grades.push(g);
+    });
+    const ORDER = { critical:0, warning:1, ok:2 };
+    const result = Object.values(studentMap)
+      .map(({ student, grades }) => analyzeStudentRisk(student, grades))
+      .sort((a,b) => ORDER[a.level]-ORDER[b.level] || (a.globalAvg??10)-(b.globalAvg??10));
+    setAnalyses(result);
+    setLoading(false);
+  }
+
+  return <RiskAlertsPanel analyses={analyses} loading={loading} />;
+}
+
 // PRÓXIMAS EVALUACIONES
 // ═══════════════════════════════════════════════════════════════════
 function UpcomingTab({ user, profile, subject, setSaving }) {
