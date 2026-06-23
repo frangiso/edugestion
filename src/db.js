@@ -558,6 +558,33 @@ export async function deleteUpcoming(id, teacherId) {
   cache.upcomingFiltered = {};
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// AVISOS / NOTICIAS
+// Colección: announcements
+// Campos: title, text, targetGrade ("" = todos), date, authorName
+// ═══════════════════════════════════════════════════════════════════
+let announcementsCache = null;
+
+export async function getAnnouncements() {
+  if (announcementsCache) return announcementsCache;
+  const snap = await getDocs(collection(db, "announcements"));
+  announcementsCache = snap.docs.map(d => ({ id:d.id, ...d.data() }))
+    .sort((a,b) => (b.date||"").localeCompare(a.date||""));
+  return announcementsCache;
+}
+
+export async function createAnnouncement(data) {
+  const ref = await addDoc(collection(db, "announcements"), { ...data, createdAt: serverTimestamp() });
+  const newAnn = { id:ref.id, ...data };
+  if (announcementsCache) announcementsCache = [newAnn, ...announcementsCache];
+  return ref.id;
+}
+
+export async function deleteAnnouncement(id) {
+  await deleteDoc(doc(db, "announcements", id));
+  if (announcementsCache) announcementsCache = announcementsCache.filter(a => a.id !== id);
+}
+
 export async function updateUpcoming(id, teacherId, data) {
   await updateDoc(doc(db,"upcoming",id), data);
   const vk=`${teacherId}_vigentes`, pk=`${teacherId}_pasadas`;
