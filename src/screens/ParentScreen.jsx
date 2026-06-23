@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor } from "../components";
-import { getChildrenByIds, getGradesByStudent, getObservationsByStudent, getAttitudesByStudent, ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS } from "../db";
+import { getChildrenByIds, getGradesByStudent, getObservationsByStudent, getAttitudesByStudent, ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS, getAnnouncements } from "../db";
 
 // Convierte valor actitudinal a número para promediar
 const ATTITUDE_NUM = { PD:1, DB:2, DM:3, DA:4 };
@@ -25,6 +25,8 @@ export default function ParentScreen({ user, profile, logout }) {
   const [obsLoaded, setObsLoaded] = useState({});     // { [childId]: true }
   const [attLoaded, setAttLoaded] = useState({});     // { [childId]: true }
   const [tabLoading, setTabLoading] = useState(false);
+  const [announcements, setAnnouncements] = useState([]);
+  const [annLoaded, setAnnLoaded] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
@@ -64,9 +66,20 @@ export default function ParentScreen({ user, profile, logout }) {
     setTabLoading(false);
   }
 
+  // Carga lazy de avisos (no depende del hijo)
+  async function ensureAnnLoaded() {
+    if (annLoaded) return;
+    setTabLoading(true);
+    const list = await getAnnouncements();
+    setAnnouncements(list);
+    setAnnLoaded(true);
+    setTabLoading(false);
+  }
+
   // Cambio de pestaña con lazy loading
   function handleTabChange(newTab) {
     setTab(newTab);
+    if (newTab === "announcements") { ensureAnnLoaded(); return; }
     if (!selectedChild) return;
     if (newTab === "observations") ensureObsLoaded(selectedChild.id);
     if (newTab === "attitudes") ensureAttLoaded(selectedChild.id);
@@ -185,8 +198,8 @@ export default function ParentScreen({ user, profile, logout }) {
             </div>
 
             {/* Tabs */}
-            <div style={{ borderBottom:"2px solid #e2e8f0", marginBottom:"20px", display:"flex", gap:"4px" }}>
-              {[["grades","📊 Notas"],["attitudes","🎯 Actitudinales"],["observations","💬 Observaciones"]].map(([k,l])=>(
+            <div style={{ borderBottom:"2px solid #e2e8f0", marginBottom:"20px", display:"flex", gap:"4px", flexWrap:"wrap" }}>
+              {[["grades","📊 Notas"],["attitudes","🎯 Actitudinales"],["observations","💬 Observaciones"],["announcements","📢 Avisos"]].map(([k,l])=>(
                 <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
               ))}
             </div>
@@ -357,6 +370,39 @@ export default function ParentScreen({ user, profile, logout }) {
                     )}
                   </div>
                 )}
+
+                {/* ── AVISOS ────────────────────────────────────────── */}
+                {tab==="announcements" && (() => {
+                  const childGradesList = students.map(s => s.grade);
+                  const filtered = announcements.filter(a => !a.targetGrade || childGradesList.includes(a.targetGrade));
+                  return (
+                    <div>
+                      {filtered.length===0 ? (
+                        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+                          <div style={{ fontSize:"3rem" }}>📢</div>
+                          <p>No hay avisos publicados por el momento</p>
+                        </div>
+                      ) : (
+                        <div style={{ display:"flex", flexDirection:"column", gap:"14px" }}>
+                          {filtered.map(a=>(
+                            <div key={a.id} className="card" style={{ padding:"20px 24px", borderLeft:`5px solid ${a.targetGrade?"#7c3aed":"#059669"}` }}>
+                              <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"10px", flexWrap:"wrap" }}>
+                                <h3 style={{ margin:0, color:"#1e3a5f", fontFamily:"'Playfair Display',serif", fontSize:"1.05rem" }}>{a.title}</h3>
+                                <span style={{ padding:"3px 10px", borderRadius:"20px", fontSize:"0.75rem", fontWeight:700, background:a.targetGrade?"#ede9fe":"#d1fae5", color:a.targetGrade?"#7c3aed":"#059669" }}>
+                                  {a.targetGrade ? `Curso ${a.targetGrade}` : "Comunicado general"}
+                                </span>
+                              </div>
+                              <p style={{ margin:"0 0 10px", color:"#475569", lineHeight:1.6, fontSize:"0.92rem", whiteSpace:"pre-wrap" }}>{a.text}</p>
+                              <div style={{ fontSize:"0.75rem", color:"#94a3b8" }}>
+                                {a.date} · {a.authorName}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             )}
           </>

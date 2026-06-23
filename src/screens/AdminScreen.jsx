@@ -5,7 +5,8 @@ import {
   createUser, updateStudent, createStudent,
   deleteStudent, deleteUserProfile, deleteGrade, searchStudents, searchParents,
   searchObservations, getAttitudesByStudent,
-  ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS
+  ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS,
+  getAnnouncements, createAnnouncement, deleteAnnouncement
 } from "../db";
 
 const GRADES = ["1°","2°","3°","4°","5°","6°"];
@@ -83,6 +84,7 @@ export default function AdminScreen({ user, profile, logout }) {
             ["attitudes","🎯 Actitudinales"],
             ["allobservations","💬 Observaciones"],
             ["top6","🏆 Top 6° Año"],
+            ["announcements","📢 Avisos"],
             ["export","📥 Exportar Excel"],
           ].map(([k,l]) => (
             <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
@@ -102,6 +104,7 @@ export default function AdminScreen({ user, profile, logout }) {
             {tab === "attitudes"       && <AllAttitudesTab />}
             {tab === "allobservations" && <AllObservationsTab user={user} profile={profile} />}
             {tab === "top6"            && <Top6Tab />}
+            {tab === "announcements"  && <AnnouncementsTab user={user} profile={profile} />}
             {tab === "export"         && <ExportTab />}
           </div>
         )}
@@ -878,6 +881,132 @@ function avgNum(nums) {
   const valid = nums.filter(n => n !== null && n !== undefined && !isNaN(n));
   if (!valid.length) return null;
   return parseFloat((valid.reduce((a,b) => a+b, 0) / valid.length).toFixed(2));
+}
+
+// ════════════════════════════════════════════════════════════════════
+// AVISOS / NOTICIAS
+// ════════════════════════════════════════════════════════════════════
+const GRADES_LIST = ["1°","2°","3°","4°","5°","6°"];
+
+function AnnouncementsTab({ user, profile }) {
+  const [announcements, setAnnouncements] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ title:"", text:"", targetGrade:"", date: new Date().toISOString().slice(0,10) });
+
+  useEffect(() => {
+    getAnnouncements().then(list => { setAnnouncements(list); setLoading(false); });
+  }, []);
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    if (!form.title.trim() || !form.text.trim()) return;
+    setSaving(true);
+    await createAnnouncement({ ...form, authorName: profile.name || user.email });
+    const updated = await getAnnouncements();
+    setAnnouncements(updated);
+    setForm(f => ({ ...f, title:"", text:"", targetGrade:"" }));
+    setSaving(false);
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm("¿Eliminar este aviso?")) return;
+    await deleteAnnouncement(id);
+    setAnnouncements(prev => prev.filter(a => a.id !== id));
+  }
+
+  return (
+    <div>
+      {/* Formulario de creación */}
+      <div className="card" style={{ padding:"24px 28px", marginBottom:"24px" }}>
+        <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", marginTop:0, marginBottom:"20px" }}>Nuevo aviso</h3>
+        <form onSubmit={handleCreate} style={{ display:"flex", flexDirection:"column", gap:"14px" }}>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"14px" }}>
+            <div>
+              <label style={{ fontSize:"0.82rem", color:"#64748b", fontWeight:600, display:"block", marginBottom:"6px" }}>Título *</label>
+              <input
+                value={form.title}
+                onChange={e => setForm(f=>({...f, title:e.target.value}))}
+                placeholder="Ej: Mañana no hay clases"
+                required
+                style={{ width:"100%", padding:"10px 14px", borderRadius:"10px", border:"1px solid #e2e8f0", fontSize:"0.9rem", boxSizing:"border-box" }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize:"0.82rem", color:"#64748b", fontWeight:600, display:"block", marginBottom:"6px" }}>Destino</label>
+              <select
+                value={form.targetGrade}
+                onChange={e => setForm(f=>({...f, targetGrade:e.target.value}))}
+                style={{ width:"100%", padding:"10px 14px", borderRadius:"10px", border:"1px solid #e2e8f0", fontSize:"0.9rem", boxSizing:"border-box", background:"white" }}
+              >
+                <option value="">Todos los cursos</option>
+                {GRADES_LIST.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize:"0.82rem", color:"#64748b", fontWeight:600, display:"block", marginBottom:"6px" }}>Mensaje *</label>
+            <textarea
+              value={form.text}
+              onChange={e => setForm(f=>({...f, text:e.target.value}))}
+              placeholder="Escribí el mensaje aquí..."
+              required
+              rows={4}
+              style={{ width:"100%", padding:"10px 14px", borderRadius:"10px", border:"1px solid #e2e8f0", fontSize:"0.9rem", resize:"vertical", boxSizing:"border-box", fontFamily:"inherit" }}
+            />
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:"14px" }}>
+            <input
+              type="date"
+              value={form.date}
+              onChange={e => setForm(f=>({...f, date:e.target.value}))}
+              style={{ padding:"10px 14px", borderRadius:"10px", border:"1px solid #e2e8f0", fontSize:"0.9rem" }}
+            />
+            <button type="submit" disabled={saving} style={{ padding:"10px 28px", borderRadius:"10px", background:"#1e3a5f", color:"white", border:"none", cursor:"pointer", fontWeight:700, fontSize:"0.9rem", opacity:saving?0.6:1 }}>
+              {saving ? "Publicando..." : "📢 Publicar aviso"}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Lista de avisos */}
+      {loading ? (
+        <div style={{ textAlign:"center", padding:"48px", color:"#94a3b8" }}>Cargando...</div>
+      ) : announcements.length === 0 ? (
+        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"3rem" }}>📢</div>
+          <p>No hay avisos publicados todavía</p>
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
+          {announcements.map(a => (
+            <div key={a.id} className="card" style={{ padding:"20px 24px", borderLeft:`5px solid ${a.targetGrade?"#7c3aed":"#059669"}` }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:"12px" }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"8px", flexWrap:"wrap" }}>
+                    <h4 style={{ margin:0, color:"#1e3a5f", fontFamily:"'Playfair Display',serif", fontSize:"1.05rem" }}>{a.title}</h4>
+                    <span style={{ padding:"3px 10px", borderRadius:"20px", fontSize:"0.75rem", fontWeight:700, background:a.targetGrade?"#ede9fe":"#d1fae5", color:a.targetGrade?"#7c3aed":"#059669" }}>
+                      {a.targetGrade ? `Curso ${a.targetGrade}` : "Todos los cursos"}
+                    </span>
+                  </div>
+                  <p style={{ margin:"0 0 10px", color:"#475569", lineHeight:1.6, fontSize:"0.92rem" }}>{a.text}</p>
+                  <div style={{ fontSize:"0.75rem", color:"#94a3b8" }}>
+                    {a.date} · Publicado por {a.authorName}
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleDelete(a.id)}
+                  style={{ background:"#fee2e2", color:"#dc2626", border:"none", borderRadius:"8px", padding:"6px 12px", cursor:"pointer", fontSize:"0.8rem", fontWeight:600, whiteSpace:"nowrap", flexShrink:0 }}
+                >
+                  Eliminar
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ExportTab() {
