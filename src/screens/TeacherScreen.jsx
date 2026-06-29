@@ -184,6 +184,12 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
     if (invalid.length > 0) { alert(`Nota inválida para: ${invalid.map(s=>s.name).join(", ")}. Debe ser entre 1 y 10.`); return; }
     const today = new Date().toISOString().split("T")[0];
     if (bulkForm.date > today) { alert(`No se puede cargar notas con fecha futura (${bulkForm.date}). La fecha máxima es hoy (${today}).`); return; }
+    const missing = bulkStudents.filter(s => !bulkScores[s.id] || isNaN(parseFloat(bulkScores[s.id])));
+    if (missing.length > 0) {
+      const nameList = missing.map(s => `• ${s.name}`).join("\n");
+      const ok = window.confirm(`⚠️ Faltan notas para ${missing.length} alumno${missing.length!==1?"s":""}:\n\n${nameList}\n\n¿Guardar igualmente con los que tienen nota cargada?`);
+      if (!ok) return;
+    }
     setSaving(true);
     const gradesData = toSave.map(s => ({
       ...bulkForm,
@@ -205,6 +211,20 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
     setGradeTypes(updated);
     setNewType(""); setShowNewType(false);
   }
+
+  // Carpetas existentes del mismo curso+materia para agregar alumno ausente
+  const existingFolders = (() => {
+    if (!selectedStudent) return [];
+    const groupMap = {};
+    grades
+      .filter(g => g.subject === subject && g.studentGrade === selectedStudent.grade)
+      .forEach(g => {
+        const key = `${g.type}|||${g.date}|||${g.trimester}`;
+        if (!groupMap[key]) groupMap[key] = { type:g.type, date:g.date, trimester:g.trimester, count:0 };
+        groupMap[key].count++;
+      });
+    return Object.values(groupMap).sort((a,b) => b.date.localeCompare(a.date)).slice(0, 8);
+  })();
 
   return (
     <div>
@@ -273,6 +293,36 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
           {selectedStudent && (
             <div className="card" style={{ padding:"24px" }}>
               <h3 style={{ margin:"0 0 16px", color:"#1e3a5f", fontSize:"1rem" }}>2. Datos de la evaluación</h3>
+
+              {/* Carpetas existentes del curso — para agregar alumno ausente */}
+              {existingFolders.length > 0 && (
+                <div style={{ marginBottom:"20px", padding:"14px 16px", background:"#f0f9ff", borderRadius:"12px", border:"1px solid #bae6fd" }}>
+                  <div style={{ fontSize:"0.8rem", color:"#0369a1", fontWeight:700, marginBottom:"8px" }}>
+                    📁 Agregar a evaluación existente de {selectedStudent.grade}
+                  </div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:"8px" }}>
+                    {existingFolders.map(f => {
+                      const isActive = form.type===f.type && form.date===f.date && form.trimester===f.trimester;
+                      return (
+                        <button
+                          key={`${f.type}|||${f.date}`}
+                          onClick={() => setForm(prev => ({ ...prev, type:f.type, date:f.date, trimester:f.trimester }))}
+                          style={{ padding:"6px 14px", borderRadius:"20px", border:`2px solid ${isActive?"#059669":"#e2e8f0"}`, background:isActive?"#d1fae5":"white", color:isActive?"#065f46":"#475569", cursor:"pointer", fontSize:"0.8rem", fontWeight:600, transition:"all 0.15s" }}
+                        >
+                          {f.type} · {f.date}
+                          <span style={{ opacity:0.6, fontSize:"0.75rem", marginLeft:"4px" }}>({f.count} alumnos)</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {existingFolders.some(f => form.type===f.type && form.date===f.date && form.trimester===f.trimester) && (
+                    <div style={{ marginTop:"8px", fontSize:"0.78rem", color:"#059669", fontWeight:600 }}>
+                      ✅ La nota se agregará a esa carpeta
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"20px" }}>
                 <div><label>Nota (1–10)</label><input type="number" min="1" max="10" step="0.5" value={form.score} onChange={e=>setForm({...form,score:e.target.value})} placeholder="Ej: 8" /></div>
                 <div>
