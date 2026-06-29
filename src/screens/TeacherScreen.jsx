@@ -154,6 +154,8 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
     if (!selectedStudent || !form.score) return;
     const score = parseFloat(form.score);
     if (score<1||score>10) { alert("La nota debe estar entre 1 y 10"); return; }
+    const today = new Date().toISOString().split("T")[0];
+    if (form.date > today) { alert(`No se puede cargar una nota con fecha futura (${form.date}). La fecha máxima es hoy (${today}).`); return; }
     setSaving(true);
     const data = { ...form, score, teacherId:user.uid, teacherName:profile.name||"", subject, studentId:selectedStudent.id, studentName:selectedStudent.name, studentGrade:selectedStudent.grade||"" };
     const id = await createGrade(data);
@@ -180,6 +182,8 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
     if (toSave.length === 0) { alert("Completá al menos una nota"); return; }
     const invalid = toSave.filter(s => parseFloat(bulkScores[s.id]) < 1 || parseFloat(bulkScores[s.id]) > 10);
     if (invalid.length > 0) { alert(`Nota inválida para: ${invalid.map(s=>s.name).join(", ")}. Debe ser entre 1 y 10.`); return; }
+    const today = new Date().toISOString().split("T")[0];
+    if (bulkForm.date > today) { alert(`No se puede cargar notas con fecha futura (${bulkForm.date}). La fecha máxima es hoy (${today}).`); return; }
     setSaving(true);
     const gradesData = toSave.map(s => ({
       ...bulkForm,
@@ -277,7 +281,7 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
                     {trimNames.map((n,i)=><option key={i+1} value={i+1}>{n}</option>)}
                   </select>
                 </div>
-                <div><label>Fecha</label><input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} /></div>
+                <div><label>Fecha</label><input type="date" max={new Date().toISOString().split("T")[0]} value={form.date} onChange={e=>setForm({...form,date:e.target.value})} /></div>
                 <div><label>Observación (opcional)</label><input value={form.note} onChange={e=>setForm({...form,note:e.target.value})} placeholder="Comentario para el tutor..." /></div>
               </div>
               <button className="btn-primary" onClick={submitIndividual} style={{ marginTop:"20px", padding:"12px 32px", fontSize:"1rem" }}>Guardar evaluación →</button>
@@ -311,7 +315,7 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
                       {trimNames.map((n,i)=><option key={i+1} value={i+1}>{n}</option>)}
                     </select>
                   </div>
-                  <div><label>Fecha</label><input type="date" value={bulkForm.date} onChange={e=>setBulkForm({...bulkForm,date:e.target.value})} /></div>
+                  <div><label>Fecha</label><input type="date" max={new Date().toISOString().split("T")[0]} value={bulkForm.date} onChange={e=>setBulkForm({...bulkForm,date:e.target.value})} /></div>
                   <div style={{ gridColumn:"1/-1" }}><label>Observación para todos (opcional)</label><input value={bulkForm.note} onChange={e=>setBulkForm({...bulkForm,note:e.target.value})} placeholder="Comentario general..." /></div>
                 </div>
               </div>
@@ -351,35 +355,142 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
 // MIS EVALUACIONES
 // ═══════════════════════════════════════════════════════════════════
 function MyGrades({ grades, setGrades, setSaving, hasMore, loadMore }) {
-  const [trim, setTrim] = useState(0); const [nameFilter, setNameFilter] = useState("");
+  const [trim, setTrim] = useState(0);
+  const [nameFilter, setNameFilter] = useState("");
+  const [gradeFilter, setGradeFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [selected, setSelected] = useState(new Set());
   const [loadingMore, setLoadingMore] = useState(false);
-  const filtered = grades.filter(g=>trim===0||g.trimester===trim).filter(g=>!nameFilter||(g.studentName||"").toLowerCase().includes(nameFilter.toLowerCase()));
-  async function removeGrade(id) { setSaving(true); await deleteGrade(id); setGrades(prev=>prev.filter(g=>g.id!==id)); setSaving(false); }
+
+  const availableStudentGrades = [...new Set(grades.map(g => g.studentGrade).filter(Boolean))].sort();
+  const availableTypes = [...new Set(grades.map(g => g.type).filter(Boolean))].sort();
+
+  const filtered = grades
+    .filter(g => trim === 0 || g.trimester === trim)
+    .filter(g => !nameFilter || (g.studentName||"").toLowerCase().includes(nameFilter.toLowerCase()))
+    .filter(g => !gradeFilter || g.studentGrade === gradeFilter)
+    .filter(g => !typeFilter || g.type === typeFilter)
+    .filter(g => !dateFrom || (g.date||"") >= dateFrom)
+    .filter(g => !dateTo || (g.date||"") <= dateTo);
+
+  const hasFilters = trim !== 0 || nameFilter || gradeFilter || typeFilter || dateFrom || dateTo;
+  const allSelected = filtered.length > 0 && filtered.every(g => selected.has(g.id));
+
+  function toggleSelect(id) {
+    setSelected(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  }
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(filtered.map(g => g.id)));
+  }
+  function clearFilters() {
+    setTrim(0); setNameFilter(""); setGradeFilter(""); setTypeFilter(""); setDateFrom(""); setDateTo("");
+  }
+
+  async function removeGrade(id) {
+    if (!window.confirm("¿Eliminar esta evaluación? Esta acción no se puede deshacer.")) return;
+    setSaving(true);
+    await deleteGrade(id);
+    setGrades(prev => prev.filter(g => g.id !== id));
+    setSelected(prev => { const next = new Set(prev); next.delete(id); return next; });
+    setSaving(false);
+  }
+
+  async function deleteSelected() {
+    const ids = [...selected].filter(id => filtered.some(g => g.id === id));
+    if (ids.length === 0) return;
+    if (!window.confirm(`¿Eliminar ${ids.length} evaluación${ids.length !== 1 ? "es" : ""}? Esta acción no se puede deshacer.`)) return;
+    setSaving(true);
+    await Promise.all(ids.map(id => deleteGrade(id)));
+    setGrades(prev => prev.filter(g => !ids.includes(g.id)));
+    setSelected(new Set());
+    setSaving(false);
+  }
+
   async function handleLoadMore() { setLoadingMore(true); await loadMore(); setLoadingMore(false); }
+
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" }}>
-        <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>Mis evaluaciones ({filtered.length})</h2>
-        <div style={{ display:"flex", gap:"6px" }}>{[["Todos",0],...trimNames.map((n,i)=>[n,i+1])].map(([l,v])=><button key={v} onClick={()=>setTrim(v)} style={{ padding:"5px 12px", borderRadius:"20px", background:trim===v?"#1e3a5f":"#f1f5f9", color:trim===v?"white":"#64748b", border:"none", cursor:"pointer", fontSize:"0.78rem", fontWeight:600 }}>{l}</button>)}</div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px", flexWrap:"wrap", gap:"10px" }}>
+        <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>
+          Mis evaluaciones ({filtered.length}{grades.length !== filtered.length ? ` de ${grades.length}` : ""})
+        </h2>
+        {selected.size > 0 && (
+          <button onClick={deleteSelected} style={{ padding:"8px 18px", borderRadius:"10px", background:"#dc2626", color:"white", border:"none", cursor:"pointer", fontWeight:700, fontSize:"0.85rem" }}>
+            🗑 Eliminar {selected.size} seleccionada{selected.size !== 1 ? "s" : ""}
+          </button>
+        )}
       </div>
-      <input value={nameFilter} onChange={e=>setNameFilter(e.target.value)} placeholder="🔍 Filtrar por nombre..." style={{ width:"100%", marginBottom:"16px" }} />
-      {filtered.length===0 ? (
-        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}><div style={{ fontSize:"3rem" }}>📋</div><p>No hay evaluaciones aún</p></div>
-      ) : (
-        <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
-          {filtered.map(g=>(
-            <div key={g.id} className="card" style={{ padding:"16px 20px", display:"flex", alignItems:"center", gap:"16px" }}>
-              <div style={{ width:"44px", height:"44px", borderRadius:"50%", background:scoreColor(g.score), display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:800, fontSize:"1.1rem", flexShrink:0 }}>{g.score}</div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontWeight:700, color:"#1e293b" }}>{g.studentName||"–"}</div>
-                <div style={{ fontSize:"0.8rem", color:"#64748b" }}>{g.subject} · {g.type} · {trimNames[g.trimester-1]} · {g.date}</div>
-                {g.note && <div style={{ fontSize:"0.8rem", color:"#7c3aed", marginTop:"2px" }}>💬 {g.note}</div>}
-              </div>
-              <button className="btn-danger" onClick={()=>removeGrade(g.id)}>Eliminar</button>
-            </div>
-          ))}
-          {hasMore && <button className="btn-primary" onClick={handleLoadMore} disabled={loadingMore} style={{ margin:"8px auto", display:"block" }}>{loadingMore?"Cargando...":"Cargar más evaluaciones"}</button>}
+
+      {/* Panel de filtros */}
+      <div className="card" style={{ padding:"16px 20px", marginBottom:"16px" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:"10px" }}>
+          <input value={nameFilter} onChange={e=>setNameFilter(e.target.value)} placeholder="🔍 Nombre..." style={{ padding:"8px 12px" }} />
+          <select value={gradeFilter} onChange={e=>setGradeFilter(e.target.value)} style={{ padding:"8px 12px" }}>
+            <option value="">Todos los años</option>
+            {availableStudentGrades.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} style={{ padding:"8px 12px" }}>
+            <option value="">Todos los tipos</option>
+            {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={trim} onChange={e=>setTrim(parseInt(e.target.value))} style={{ padding:"8px 12px" }}>
+            <option value={0}>Todos los trim.</option>
+            {trimNames.map((n,i) => <option key={i+1} value={i+1}>{n}</option>)}
+          </select>
+          <div>
+            <div style={{ fontSize:"0.72rem", color:"#94a3b8", marginBottom:"3px" }}>Desde</div>
+            <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} style={{ padding:"8px 12px", width:"100%", boxSizing:"border-box" }} />
+          </div>
+          <div>
+            <div style={{ fontSize:"0.72rem", color:"#94a3b8", marginBottom:"3px" }}>Hasta</div>
+            <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} style={{ padding:"8px 12px", width:"100%", boxSizing:"border-box" }} />
+          </div>
         </div>
+        {hasFilters && (
+          <button onClick={clearFilters} style={{ marginTop:"10px", padding:"5px 14px", borderRadius:"20px", border:"1px solid #e2e8f0", background:"#f8fafc", color:"#64748b", cursor:"pointer", fontSize:"0.8rem" }}>
+            ✕ Limpiar filtros
+          </button>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"3rem" }}>📋</div>
+          <p>{hasFilters ? "Ninguna evaluación coincide con los filtros" : "No hay evaluaciones aún"}</p>
+        </div>
+      ) : (
+        <>
+          {/* Seleccionar todos */}
+          <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"10px", padding:"4px 4px" }}>
+            <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ width:"16px", height:"16px", cursor:"pointer" }} />
+            <span style={{ fontSize:"0.82rem", color:"#64748b" }}>Seleccionar todas ({filtered.length})</span>
+            {selected.size > 0 && (
+              <span style={{ fontSize:"0.82rem", color:"#dc2626", fontWeight:600 }}>{selected.size} seleccionada{selected.size!==1?"s":""}</span>
+            )}
+          </div>
+
+          <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
+            {filtered.map(g => (
+              <div key={g.id} className="card" style={{ padding:"14px 20px", display:"flex", alignItems:"center", gap:"14px" }}>
+                <input type="checkbox" checked={selected.has(g.id)} onChange={()=>toggleSelect(g.id)} style={{ width:"16px", height:"16px", cursor:"pointer", flexShrink:0 }} />
+                <div style={{ width:"42px", height:"42px", borderRadius:"50%", background:scoreColor(g.score), display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:800, fontSize:"1.05rem", flexShrink:0 }}>{g.score}</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontWeight:700, color:"#1e293b" }}>{g.studentName||"–"} <span style={{ fontWeight:400, fontSize:"0.8rem", color:"#94a3b8" }}>({g.studentGrade})</span></div>
+                  <div style={{ fontSize:"0.8rem", color:"#64748b" }}>{g.subject} · {g.type} · {trimNames[g.trimester-1]} · {g.date}</div>
+                  {g.note && <div style={{ fontSize:"0.78rem", color:"#7c3aed", marginTop:"2px" }}>💬 {g.note}</div>}
+                </div>
+                <button className="btn-danger" onClick={()=>removeGrade(g.id)}>Eliminar</button>
+              </div>
+            ))}
+            {hasMore && (
+              <button className="btn-primary" onClick={handleLoadMore} disabled={loadingMore} style={{ margin:"8px auto", display:"block" }}>
+                {loadingMore ? "Cargando..." : "Cargar más evaluaciones"}
+              </button>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
