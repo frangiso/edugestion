@@ -331,6 +331,13 @@ export async function deleteGrade(id) {
   Object.keys(cache.studentGrades).forEach(k=>{ cache.studentGrades[k]=cache.studentGrades[k].filter(g=>g.id!==id); });
 }
 
+export async function updateGrade(id, updates) {
+  await updateDoc(doc(db,"grades",id), updates);
+  if (allGradesCache) allGradesCache = allGradesCache.map(g => g.id===id ? { ...g, ...updates } : g);
+  Object.keys(cache.teacherGrades).forEach(k=>{ cache.teacherGrades[k]=cache.teacherGrades[k].map(g=>g.id===id?{...g,...updates}:g); });
+  Object.keys(cache.studentGrades).forEach(k=>{ cache.studentGrades[k]=cache.studentGrades[k].map(g=>g.id===id?{...g,...updates}:g); });
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // ACTITUDINALES
 // Colección: attitudes

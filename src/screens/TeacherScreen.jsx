@@ -3,7 +3,7 @@ import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObser
 import {
   searchStudents, getStudentsByGrade,
   getGradesByTeacherPaged, getMoreGradesByTeacher, getGradesByStudent, getAllGradesByTeacher,
-  createGrade, createGradesBatch, deleteGrade,
+  createGrade, createGradesBatch, deleteGrade, updateGrade,
   getGradeTypes, addGradeType,
   getObservationsByTeacher, createObservation, deleteObservation,
   getAttitudesByTeacher, saveAttitude, saveAttitudesBatch, deleteAttitude,
@@ -352,61 +352,36 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// MIS EVALUACIONES
+// MIS EVALUACIONES — vista de carpetas agrupadas
 // ═══════════════════════════════════════════════════════════════════
 function MyGrades({ grades, setGrades, setSaving, hasMore, loadMore }) {
-  const [trim, setTrim] = useState(0);
-  const [nameFilter, setNameFilter] = useState("");
   const [gradeFilter, setGradeFilter] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [selected, setSelected] = useState(new Set());
+  const [typeFilter, setTypeFilter]   = useState("");
+  const [trim, setTrim]               = useState(0);
+  const [dateFrom, setDateFrom]       = useState("");
+  const [dateTo, setDateTo]           = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
 
   const availableStudentGrades = [...new Set(grades.map(g => g.studentGrade).filter(Boolean))].sort();
-  const availableTypes = [...new Set(grades.map(g => g.type).filter(Boolean))].sort();
+  const availableTypes         = [...new Set(grades.map(g => g.type).filter(Boolean))].sort();
+  const hasFilters = gradeFilter || typeFilter || trim !== 0 || dateFrom || dateTo;
 
-  const filtered = grades
-    .filter(g => trim === 0 || g.trimester === trim)
-    .filter(g => !nameFilter || (g.studentName||"").toLowerCase().includes(nameFilter.toLowerCase()))
-    .filter(g => !gradeFilter || g.studentGrade === gradeFilter)
-    .filter(g => !typeFilter || g.type === typeFilter)
-    .filter(g => !dateFrom || (g.date||"") >= dateFrom)
-    .filter(g => !dateTo || (g.date||"") <= dateTo);
+  // Agrupar por (subject, type, studentGrade, date, trimester)
+  const groupMap = {};
+  grades.forEach(g => {
+    const key = `${g.subject}|||${g.type}|||${g.studentGrade}|||${g.date}|||${g.trimester}`;
+    if (!groupMap[key]) groupMap[key] = { key, subject:g.subject, type:g.type, studentGrade:g.studentGrade, date:g.date, trimester:g.trimester, items:[] };
+    groupMap[key].items.push(g);
+  });
 
-  const hasFilters = trim !== 0 || nameFilter || gradeFilter || typeFilter || dateFrom || dateTo;
-  const allSelected = filtered.length > 0 && filtered.every(g => selected.has(g.id));
+  const allGroups = Object.values(groupMap).sort((a,b) => b.date.localeCompare(a.date));
 
-  function toggleSelect(id) {
-    setSelected(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
-  }
-  function toggleAll() {
-    setSelected(allSelected ? new Set() : new Set(filtered.map(g => g.id)));
-  }
-  function clearFilters() {
-    setTrim(0); setNameFilter(""); setGradeFilter(""); setTypeFilter(""); setDateFrom(""); setDateTo("");
-  }
-
-  async function removeGrade(id) {
-    if (!window.confirm("¿Eliminar esta evaluación? Esta acción no se puede deshacer.")) return;
-    setSaving(true);
-    await deleteGrade(id);
-    setGrades(prev => prev.filter(g => g.id !== id));
-    setSelected(prev => { const next = new Set(prev); next.delete(id); return next; });
-    setSaving(false);
-  }
-
-  async function deleteSelected() {
-    const ids = [...selected].filter(id => filtered.some(g => g.id === id));
-    if (ids.length === 0) return;
-    if (!window.confirm(`¿Eliminar ${ids.length} evaluación${ids.length !== 1 ? "es" : ""}? Esta acción no se puede deshacer.`)) return;
-    setSaving(true);
-    await Promise.all(ids.map(id => deleteGrade(id)));
-    setGrades(prev => prev.filter(g => !ids.includes(g.id)));
-    setSelected(new Set());
-    setSaving(false);
-  }
+  const filteredGroups = allGroups
+    .filter(gr => !gradeFilter || gr.studentGrade === gradeFilter)
+    .filter(gr => !typeFilter  || gr.type === typeFilter)
+    .filter(gr => trim === 0   || gr.trimester === trim)
+    .filter(gr => !dateFrom    || gr.date >= dateFrom)
+    .filter(gr => !dateTo      || gr.date <= dateTo);
 
   async function handleLoadMore() { setLoadingMore(true); await loadMore(); setLoadingMore(false); }
 
@@ -414,83 +389,235 @@ function MyGrades({ grades, setGrades, setSaving, hasMore, loadMore }) {
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px", flexWrap:"wrap", gap:"10px" }}>
         <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>
-          Mis evaluaciones ({filtered.length}{grades.length !== filtered.length ? ` de ${grades.length}` : ""})
+          Mis evaluaciones ({filteredGroups.length} carpeta{filteredGroups.length!==1?"s":""}{hasFilters && allGroups.length!==filteredGroups.length?` de ${allGroups.length}`:""})
         </h2>
-        {selected.size > 0 && (
-          <button onClick={deleteSelected} style={{ padding:"8px 18px", borderRadius:"10px", background:"#dc2626", color:"white", border:"none", cursor:"pointer", fontWeight:700, fontSize:"0.85rem" }}>
-            🗑 Eliminar {selected.size} seleccionada{selected.size !== 1 ? "s" : ""}
-          </button>
-        )}
       </div>
 
-      {/* Panel de filtros */}
-      <div className="card" style={{ padding:"16px 20px", marginBottom:"16px" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:"10px" }}>
-          <input value={nameFilter} onChange={e=>setNameFilter(e.target.value)} placeholder="🔍 Nombre..." style={{ padding:"8px 12px" }} />
-          <select value={gradeFilter} onChange={e=>setGradeFilter(e.target.value)} style={{ padding:"8px 12px" }}>
+      {/* Filtros */}
+      <div className="card" style={{ padding:"14px 18px", marginBottom:"16px" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))", gap:"10px" }}>
+          <select value={gradeFilter} onChange={e=>setGradeFilter(e.target.value)} style={{ padding:"8px 10px" }}>
             <option value="">Todos los años</option>
             {availableStudentGrades.map(g => <option key={g} value={g}>{g}</option>)}
           </select>
-          <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} style={{ padding:"8px 12px" }}>
+          <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} style={{ padding:"8px 10px" }}>
             <option value="">Todos los tipos</option>
             {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
-          <select value={trim} onChange={e=>setTrim(parseInt(e.target.value))} style={{ padding:"8px 12px" }}>
+          <select value={trim} onChange={e=>setTrim(parseInt(e.target.value))} style={{ padding:"8px 10px" }}>
             <option value={0}>Todos los trim.</option>
             {trimNames.map((n,i) => <option key={i+1} value={i+1}>{n}</option>)}
           </select>
           <div>
-            <div style={{ fontSize:"0.72rem", color:"#94a3b8", marginBottom:"3px" }}>Desde</div>
-            <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} style={{ padding:"8px 12px", width:"100%", boxSizing:"border-box" }} />
+            <div style={{ fontSize:"0.7rem", color:"#94a3b8", marginBottom:"2px" }}>Desde</div>
+            <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} style={{ padding:"8px 10px", width:"100%", boxSizing:"border-box" }} />
           </div>
           <div>
-            <div style={{ fontSize:"0.72rem", color:"#94a3b8", marginBottom:"3px" }}>Hasta</div>
-            <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} style={{ padding:"8px 12px", width:"100%", boxSizing:"border-box" }} />
+            <div style={{ fontSize:"0.7rem", color:"#94a3b8", marginBottom:"2px" }}>Hasta</div>
+            <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} style={{ padding:"8px 10px", width:"100%", boxSizing:"border-box" }} />
           </div>
         </div>
         {hasFilters && (
-          <button onClick={clearFilters} style={{ marginTop:"10px", padding:"5px 14px", borderRadius:"20px", border:"1px solid #e2e8f0", background:"#f8fafc", color:"#64748b", cursor:"pointer", fontSize:"0.8rem" }}>
+          <button onClick={()=>{setGradeFilter("");setTypeFilter("");setTrim(0);setDateFrom("");setDateTo("");}} style={{ marginTop:"10px", padding:"5px 14px", borderRadius:"20px", border:"1px solid #e2e8f0", background:"#f8fafc", color:"#64748b", cursor:"pointer", fontSize:"0.8rem" }}>
             ✕ Limpiar filtros
           </button>
         )}
       </div>
 
-      {filtered.length === 0 ? (
+      {filteredGroups.length === 0 ? (
         <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
-          <div style={{ fontSize:"3rem" }}>📋</div>
-          <p>{hasFilters ? "Ninguna evaluación coincide con los filtros" : "No hay evaluaciones aún"}</p>
+          <div style={{ fontSize:"3rem" }}>📁</div>
+          <p>{hasFilters ? "Ninguna evaluación coincide con los filtros" : "No hay evaluaciones cargadas aún"}</p>
         </div>
       ) : (
-        <>
-          {/* Seleccionar todos */}
-          <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"10px", padding:"4px 4px" }}>
-            <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ width:"16px", height:"16px", cursor:"pointer" }} />
-            <span style={{ fontSize:"0.82rem", color:"#64748b" }}>Seleccionar todas ({filtered.length})</span>
-            {selected.size > 0 && (
-              <span style={{ fontSize:"0.82rem", color:"#dc2626", fontWeight:600 }}>{selected.size} seleccionada{selected.size!==1?"s":""}</span>
+        <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
+          {filteredGroups.map(gr => (
+            <EvalFolder key={gr.key} group={gr} setGrades={setGrades} setSaving={setSaving} />
+          ))}
+          {hasMore && (
+            <button className="btn-primary" onClick={handleLoadMore} disabled={loadingMore} style={{ margin:"8px auto", display:"block" }}>
+              {loadingMore ? "Cargando..." : "Cargar más evaluaciones"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Carpeta individual — expandible con edición inline
+function EvalFolder({ group, setGrades, setSaving }) {
+  const [open, setOpen]     = useState(false);
+  const [edits, setEdits]   = useState({}); // { [id]: score string }
+  const [editDate, setEditDate] = useState(group.date);
+  const [saving, setLocalSaving] = useState(false);
+  const [saved, setSaved]   = useState(false);
+
+  const groupAvg = avg(group.items.map(g => g.score));
+  const today    = new Date().toISOString().split("T")[0];
+
+  const hasChanges = Object.keys(edits).length > 0 || editDate !== group.date;
+
+  function handleScoreChange(id, val) {
+    setEdits(prev => ({ ...prev, [id]: val }));
+  }
+
+  async function saveEdits() {
+    if (editDate > today) { alert(`No se puede usar una fecha futura (${editDate})`); return; }
+    setLocalSaving(true);
+    const promises = [];
+
+    // Guardar cambios de notas
+    Object.entries(edits).forEach(([id, val]) => {
+      const s = parseFloat(val);
+      if (!isNaN(s) && s >= 1 && s <= 10) promises.push(updateGrade(id, { score: s }));
+    });
+
+    // Guardar cambio de fecha para toda la carpeta
+    if (editDate !== group.date) {
+      group.items.forEach(g => promises.push(updateGrade(g.id, { date: editDate })));
+    }
+
+    await Promise.all(promises);
+
+    // Actualizar estado local
+    setGrades(prev => prev.map(g => {
+      if (!group.items.some(gi => gi.id === g.id)) return g;
+      const scoreVal = edits[g.id] !== undefined ? parseFloat(edits[g.id]) : g.score;
+      return { ...g, score: !isNaN(scoreVal) && scoreVal >= 1 && scoreVal <= 10 ? scoreVal : g.score, date: editDate };
+    }));
+
+    setEdits({});
+    group.date = editDate; // update group ref for re-renders
+    setLocalSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  }
+
+  async function deleteOne(id) {
+    if (!window.confirm("¿Eliminar la nota de este alumno?")) return;
+    setSaving(true);
+    await deleteGrade(id);
+    setGrades(prev => prev.filter(g => g.id !== id));
+    setSaving(false);
+  }
+
+  async function deleteFolder() {
+    const n = group.items.length;
+    if (!window.confirm(`¿Eliminar esta evaluación completa? Se borrarán las ${n} nota${n!==1?"s":""} de todos los alumnos. Esta acción no se puede deshacer.`)) return;
+    setSaving(true);
+    await Promise.all(group.items.map(g => deleteGrade(g.id)));
+    setGrades(prev => prev.filter(g => !group.items.some(gi => gi.id === g.id)));
+    setSaving(false);
+  }
+
+  const avgColor = groupAvg === "–" ? "#94a3b8" : scoreColor(parseFloat(groupAvg));
+
+  return (
+    <div className="card" style={{ overflow:"hidden", border: open ? "2px solid #1e3a5f" : "2px solid transparent" }}>
+      {/* Cabecera / carpeta cerrada */}
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{ padding:"16px 20px", display:"flex", alignItems:"center", gap:"14px", cursor:"pointer", background: open ? "#f0f4f8" : "white", transition:"background 0.15s" }}
+      >
+        <span style={{ fontSize:"1.6rem", flexShrink:0 }}>{open ? "📂" : "📁"}</span>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontWeight:700, color:"#1e3a5f", fontSize:"1rem" }}>
+            {group.type} — {group.studentGrade}
+          </div>
+          <div style={{ fontSize:"0.8rem", color:"#64748b", marginTop:"2px" }}>
+            {group.subject} · {trimNames[group.trimester-1]} · {group.date} · {group.items.length} alumno{group.items.length!==1?"s":""}
+          </div>
+        </div>
+        <div style={{ textAlign:"center", flexShrink:0 }}>
+          <div style={{ fontSize:"1.4rem", fontWeight:800, color:avgColor, fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{groupAvg}</div>
+          <div style={{ fontSize:"0.68rem", color:"#94a3b8" }}>promedio</div>
+        </div>
+        <div style={{ flexShrink:0, display:"flex", gap:"8px", alignItems:"center" }}>
+          <button
+            onClick={e => { e.stopPropagation(); deleteFolder(); }}
+            style={{ padding:"5px 12px", borderRadius:"8px", background:"#fee2e2", color:"#dc2626", border:"none", cursor:"pointer", fontSize:"0.78rem", fontWeight:600 }}
+          >
+            🗑 Eliminar
+          </button>
+          <span style={{ color:"#94a3b8", fontSize:"1.1rem" }}>{open ? "▲" : "▼"}</span>
+        </div>
+      </div>
+
+      {/* Contenido expandido */}
+      {open && (
+        <div style={{ padding:"20px 24px", borderTop:"1px solid #e2e8f0" }}>
+          {saved && (
+            <div style={{ background:"#d1fae5", border:"1px solid #6ee7b7", borderRadius:"10px", padding:"10px 16px", marginBottom:"16px", color:"#065f46", fontWeight:600, fontSize:"0.9rem" }}>
+              ✅ Cambios guardados correctamente
+            </div>
+          )}
+
+          {/* Editar fecha de la carpeta */}
+          <div style={{ display:"flex", alignItems:"center", gap:"12px", marginBottom:"20px", flexWrap:"wrap" }}>
+            <label style={{ fontSize:"0.82rem", color:"#64748b", fontWeight:600 }}>Fecha de la evaluación:</label>
+            <input
+              type="date"
+              max={today}
+              value={editDate}
+              onChange={e => setEditDate(e.target.value)}
+              style={{ padding:"7px 12px", borderRadius:"8px", border:"1px solid #e2e8f0", fontSize:"0.9rem" }}
+            />
+            {editDate !== group.date && (
+              <span style={{ fontSize:"0.78rem", color:"#d97706", fontWeight:600 }}>⚠ Se aplicará a todos los alumnos</span>
             )}
           </div>
 
-          <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
-            {filtered.map(g => (
-              <div key={g.id} className="card" style={{ padding:"14px 20px", display:"flex", alignItems:"center", gap:"14px" }}>
-                <input type="checkbox" checked={selected.has(g.id)} onChange={()=>toggleSelect(g.id)} style={{ width:"16px", height:"16px", cursor:"pointer", flexShrink:0 }} />
-                <div style={{ width:"42px", height:"42px", borderRadius:"50%", background:scoreColor(g.score), display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:800, fontSize:"1.05rem", flexShrink:0 }}>{g.score}</div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontWeight:700, color:"#1e293b" }}>{g.studentName||"–"} <span style={{ fontWeight:400, fontSize:"0.8rem", color:"#94a3b8" }}>({g.studentGrade})</span></div>
-                  <div style={{ fontSize:"0.8rem", color:"#64748b" }}>{g.subject} · {g.type} · {trimNames[g.trimester-1]} · {g.date}</div>
-                  {g.note && <div style={{ fontSize:"0.78rem", color:"#7c3aed", marginTop:"2px" }}>💬 {g.note}</div>}
+          {/* Tabla de alumnos */}
+          <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 100px 80px", gap:"8px", padding:"0 4px" }}>
+              <span style={{ fontSize:"0.72rem", color:"#94a3b8", fontWeight:700, textTransform:"uppercase" }}>Alumno</span>
+              <span style={{ fontSize:"0.72rem", color:"#94a3b8", fontWeight:700, textTransform:"uppercase", textAlign:"center" }}>Nota</span>
+              <span></span>
+            </div>
+            {group.items.sort((a,b) => (a.studentName||"").localeCompare(b.studentName||"")).map(g => {
+              const currentScore = edits[g.id] !== undefined ? edits[g.id] : String(g.score);
+              const scoreNum = parseFloat(currentScore);
+              const isModified = edits[g.id] !== undefined && parseFloat(edits[g.id]) !== g.score;
+              return (
+                <div key={g.id} style={{ display:"grid", gridTemplateColumns:"1fr 100px 80px", gap:"8px", alignItems:"center", padding:"8px 4px", borderBottom:"1px solid #f1f5f9" }}>
+                  <div>
+                    <div style={{ fontWeight:600, color:"#1e293b", fontSize:"0.9rem" }}>{g.studentName||"–"}</div>
+                    {g.note && <div style={{ fontSize:"0.75rem", color:"#7c3aed" }}>💬 {g.note}</div>}
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
+                    <input
+                      type="number" min="1" max="10" step="0.5"
+                      value={currentScore}
+                      onChange={e => handleScoreChange(g.id, e.target.value)}
+                      style={{ width:"60px", padding:"6px 8px", textAlign:"center", borderRadius:"8px", border:`2px solid ${isModified?"#d97706":"#e2e8f0"}`, fontWeight:700, color:!isNaN(scoreNum)?scoreColor(scoreNum):"#1e293b", background: isModified?"#fffbeb":"white" }}
+                    />
+                  </div>
+                  <button
+                    onClick={() => deleteOne(g.id)}
+                    style={{ padding:"5px 10px", borderRadius:"8px", background:"#fee2e2", color:"#dc2626", border:"none", cursor:"pointer", fontSize:"0.75rem", fontWeight:600 }}
+                  >
+                    Eliminar
+                  </button>
                 </div>
-                <button className="btn-danger" onClick={()=>removeGrade(g.id)}>Eliminar</button>
-              </div>
-            ))}
-            {hasMore && (
-              <button className="btn-primary" onClick={handleLoadMore} disabled={loadingMore} style={{ margin:"8px auto", display:"block" }}>
-                {loadingMore ? "Cargando..." : "Cargar más evaluaciones"}
-              </button>
-            )}
+              );
+            })}
           </div>
-        </>
+
+          {/* Botón guardar */}
+          <div style={{ marginTop:"20px", display:"flex", justifyContent:"flex-end", gap:"10px", alignItems:"center" }}>
+            {hasChanges && !saving && (
+              <span style={{ fontSize:"0.8rem", color:"#d97706" }}>Hay cambios sin guardar</span>
+            )}
+            <button
+              onClick={saveEdits}
+              disabled={!hasChanges || saving}
+              style={{ padding:"10px 28px", borderRadius:"10px", background: hasChanges?"#1e3a5f":"#e2e8f0", color: hasChanges?"white":"#94a3b8", border:"none", cursor: hasChanges?"pointer":"default", fontWeight:700, fontSize:"0.9rem" }}
+            >
+              {saving ? "Guardando..." : "Guardar cambios"}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
