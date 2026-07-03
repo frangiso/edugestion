@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor } from "../components";
-import { getChildrenByIds, getGradesByStudent, getObservationsByStudent, getAttitudesByStudent, ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS, getAnnouncements } from "../db";
+import { getChildrenByIds, getGradesByStudent, getObservationsByStudent, getAttitudesByStudent, ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS, getAnnouncements, getCourseObservations, getUpcomingFiltered } from "../db";
 
 // Convierte valor actitudinal a número para promediar
 const ATTITUDE_NUM = { PD:1, DB:2, DM:3, DA:4 };
@@ -22,8 +22,12 @@ export default function ParentScreen({ user, profile, logout }) {
   const [loading, setLoading] = useState(true);
 
   // ── Lazy: rastrear qué hijos ya tienen obs y actitudinales cargadas ──
-  const [obsLoaded, setObsLoaded] = useState({});     // { [childId]: true }
-  const [attLoaded, setAttLoaded] = useState({});     // { [childId]: true }
+  const [obsLoaded, setObsLoaded] = useState({});
+  const [courseObsMap, setCourseObsMap] = useState({});
+  const [courseObsLoaded, setCourseObsLoaded] = useState({});
+  const [attLoaded, setAttLoaded] = useState({});
+  const [upcomingMap, setUpcomingMap] = useState({});
+  const [upcomingLoaded, setUpcomingLoaded] = useState({});
   const [tabLoading, setTabLoading] = useState(false);
   const [announcements, setAnnouncements] = useState([]);
   const [annLoaded, setAnnLoaded] = useState(false);
@@ -46,13 +50,37 @@ export default function ParentScreen({ user, profile, logout }) {
     setLoading(false);
   }
 
-  // Carga lazy de observaciones para un hijo específico
+  // Carga lazy de observaciones individuales + generales del curso
   async function ensureObsLoaded(childId) {
-    if (obsLoaded[childId]) return;
+    if (obsLoaded[childId] && courseObsLoaded[childId]) return;
     setTabLoading(true);
-    const obs = await getObservationsByStudent(childId);
-    setObservationsMap(prev => ({ ...prev, [childId]: obs }));
-    setObsLoaded(prev => ({ ...prev, [childId]: true }));
+    const promises = [];
+    if (!obsLoaded[childId]) promises.push(
+      getObservationsByStudent(childId).then(obs => {
+        setObservationsMap(prev => ({ ...prev, [childId]: obs }));
+        setObsLoaded(prev => ({ ...prev, [childId]: true }));
+      })
+    );
+    const childForObs = students.find(s => s.id === childId);
+    if (childForObs && !courseObsLoaded[childId]) promises.push(
+      getCourseObservations(childForObs.grade).then(courseObs => {
+        setCourseObsMap(prev => ({ ...prev, [childId]: courseObs }));
+        setCourseObsLoaded(prev => ({ ...prev, [childId]: true }));
+      })
+    );
+    await Promise.all(promises);
+    setTabLoading(false);
+  }
+
+  // Carga lazy de próximas evaluaciones para el año del hijo
+  async function ensureUpcomingLoaded(childId) {
+    if (upcomingLoaded[childId]) return;
+    const childForUp = students.find(s => s.id === childId);
+    if (!childForUp) return;
+    setTabLoading(true);
+    const items = await getUpcomingFiltered({ grade: childForUp.grade });
+    setUpcomingMap(prev => ({ ...prev, [childId]: items }));
+    setUpcomingLoaded(prev => ({ ...prev, [childId]: true }));
     setTabLoading(false);
   }
 
@@ -83,6 +111,7 @@ export default function ParentScreen({ user, profile, logout }) {
     if (!selectedChild) return;
     if (newTab === "observations") ensureObsLoaded(selectedChild.id);
     if (newTab === "attitudes") ensureAttLoaded(selectedChild.id);
+    if (newTab === "upcoming") ensureUpcomingLoaded(selectedChild.id);
   }
 
   // Cambio de hijo: notas ya están, lazy para obs y att si corresponde
@@ -118,7 +147,9 @@ export default function ParentScreen({ user, profile, logout }) {
   const allChildGrades = child ? (gradesMap[child.id]||[]) : [];
   const childGrades = allChildGrades.filter(g => trim===0 || g.trimester===trim);
   const childObs = child ? (observationsMap[child.id]||[]) : [];
+  const childCourseObs = child ? (courseObsMap[child.id]||[]) : [];
   const childAtt = child ? (attitudesMap[child.id]||[]) : [];
+  const childUpcoming = child ? (upcomingMap[child.id]||[]) : [];
   const globalAvg = avg(allChildGrades.map(g=>g.score));
 
   const subjectMap = {};
@@ -199,7 +230,7 @@ export default function ParentScreen({ user, profile, logout }) {
 
             {/* Tabs */}
             <div style={{ borderBottom:"2px solid #e2e8f0", marginBottom:"20px", display:"flex", gap:"4px", flexWrap:"wrap" }}>
-              {[["grades","📊 Notas"],["attitudes","🎯 Actitudinales"],["observations","💬 Observaciones"],["announcements","📢 Avisos"]].map(([k,l])=>(
+              {[["grades","📊 Notas"],["attitudes","🎯 Actitudinales"],["observations","💬 Observaciones"],["upcoming","📅 Próximas"],["announcements","📢 Avisos"]].map(([k,l])=>(
                 <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
               ))}
             </div>
@@ -347,23 +378,87 @@ export default function ParentScreen({ user, profile, logout }) {
                 {/* ── OBSERVACIONES ─────────────────────────────────── */}
                 {tab==="observations" && (
                   <div>
-                    {childObs.length===0 ? (
+                    {/* Observaciones individuales */}
+                    {childObs.length===0 && childCourseObs.length===0 ? (
                       <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
                         <div style={{ fontSize:"3rem" }}>💬</div>
                         <p>No hay observaciones registradas para {child.name}</p>
                       </div>
                     ) : (
-                      <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
-                        {childObs.map(o=>(
-                          <div key={o.id} className="card" style={{ padding:"16px 20px", borderLeft:"4px solid #7c3aed" }}>
-                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" }}>
-                              <div>
-                                <span style={{ fontWeight:600, color:"#7c3aed", fontSize:"0.85rem" }}>Prof. {o.teacherName}</span>
-                                {o.subjects&&o.subjects.length>0&&<span style={{ fontSize:"0.78rem", color:"#94a3b8", marginLeft:"8px" }}>· {o.subjects.join(", ")}</span>}
-                              </div>
-                              <span style={{ fontSize:"0.78rem", color:"#94a3b8" }}>{o.date}</span>
+                      <>
+                        {childObs.length > 0 && (
+                          <>
+                            <h3 style={{ margin:"0 0 12px", color:"#1e3a5f", fontFamily:"'Playfair Display',serif", fontSize:"1rem" }}>Observaciones individuales</h3>
+                            <div style={{ display:"flex", flexDirection:"column", gap:"12px", marginBottom:"28px" }}>
+                              {childObs.map(o=>(
+                                <div key={o.id} className="card" style={{ padding:"16px 20px", borderLeft:"4px solid #7c3aed" }}>
+                                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" }}>
+                                    <div>
+                                      <span style={{ fontWeight:600, color:"#7c3aed", fontSize:"0.85rem" }}>Prof. {o.teacherName}</span>
+                                      {o.subjects&&o.subjects.length>0&&<span style={{ fontSize:"0.78rem", color:"#94a3b8", marginLeft:"8px" }}>· {o.subjects.join(", ")}</span>}
+                                    </div>
+                                    <span style={{ fontSize:"0.78rem", color:"#94a3b8" }}>{o.date}</span>
+                                  </div>
+                                  <p style={{ margin:0, color:"#475569", fontSize:"0.9rem", lineHeight:1.5 }}>{o.text}</p>
+                                </div>
+                              ))}
                             </div>
-                            <p style={{ margin:0, color:"#475569", fontSize:"0.9rem", lineHeight:1.5 }}>{o.text}</p>
+                          </>
+                        )}
+                        {/* Observaciones generales del curso */}
+                        {childCourseObs.length > 0 && (
+                          <>
+                            <h3 style={{ margin:"0 0 12px", color:"#1e3a5f", fontFamily:"'Playfair Display',serif", fontSize:"1rem" }}>Observaciones generales del curso ({child.grade})</h3>
+                            <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
+                              {childCourseObs.map(o=>(
+                                <div key={o.id} className="card" style={{ padding:"16px 20px", borderLeft:"4px solid #0369a1" }}>
+                                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" }}>
+                                    <div>
+                                      <span style={{ fontWeight:600, color:"#0369a1", fontSize:"0.85rem" }}>Prof. {o.teacherName}</span>
+                                      {o.subjects&&o.subjects.length>0&&<span style={{ fontSize:"0.78rem", color:"#94a3b8", marginLeft:"8px" }}>· {o.subjects.join(", ")}</span>}
+                                    </div>
+                                    <span style={{ fontSize:"0.78rem", color:"#94a3b8" }}>{o.date}</span>
+                                  </div>
+                                  <p style={{ margin:0, color:"#475569", fontSize:"0.9rem", lineHeight:1.5 }}>{o.text}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* ── PRÓXIMAS EVALUACIONES ─────────────────────────── */}
+                {tab==="upcoming" && (
+                  <div>
+                    {childUpcoming.length===0 ? (
+                      <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+                        <div style={{ fontSize:"3rem" }}>📅</div>
+                        <p>No hay evaluaciones próximas publicadas para {child.grade}</p>
+                      </div>
+                    ) : (
+                      <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
+                        {childUpcoming.map(u=>(
+                          <div key={u.id} className="card" style={{ padding:"20px 24px", borderLeft:"4px solid #0369a1" }}>
+                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:"12px", flexWrap:"wrap" }}>
+                              <div style={{ flex:1 }}>
+                                <h3 style={{ margin:"0 0 8px", color:"#0c4a6e", fontFamily:"'Playfair Display',serif", fontSize:"1.05rem" }}>{u.title}</h3>
+                                <div style={{ display:"flex", gap:"6px", flexWrap:"wrap" }}>
+                                  <span className="badge" style={{ background:"#e0f2fe", color:"#0369a1" }}>{u.type}</span>
+                                  {u.subject&&<span className="badge" style={{ background:"#f0fdf4", color:"#15803d" }}>{u.subject}</span>}
+                                  <span className="badge" style={{ background:"#fef9c3", color:"#854d0e" }}>{u.grade}</span>
+                                  {u.trimester&&<span className="badge" style={{ background:"#f3e8ff", color:"#7c3aed" }}>{["","1° Trim","2° Trim","3° Trim"][u.trimester]||""}</span>}
+                                </div>
+                              </div>
+                              <div style={{ textAlign:"right", flexShrink:0 }}>
+                                <div style={{ fontWeight:700, color:"#dc2626", fontSize:"0.9rem" }}>Hasta {u.dateEnd}</div>
+                                {u.dateStart&&u.dateStart!==u.dateEnd&&<div style={{ fontSize:"0.75rem", color:"#94a3b8" }}>Desde {u.dateStart}</div>}
+                                <div style={{ fontSize:"0.75rem", color:"#94a3b8", marginTop:"2px" }}>Prof. {u.teacherName}</div>
+                              </div>
+                            </div>
+                            {u.description&&<p style={{ margin:"12px 0 0", color:"#475569", fontSize:"0.87rem", lineHeight:1.6 }}>{u.description}</p>}
                           </div>
                         ))}
                       </div>
