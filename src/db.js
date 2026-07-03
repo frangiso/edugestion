@@ -109,18 +109,19 @@ export async function searchParents(searchText = "") {
 }
 
 export async function createUser(email, password, profileData) {
+  const normalizedEmail = email.trim().toLowerCase();
   let cred;
-  try { cred = await createUserWithEmailAndPassword(auth, email, password); }
+  try { cred = await createUserWithEmailAndPassword(auth, normalizedEmail, password); }
   catch(e) {
     if (e.code === 'auth/email-already-in-use') {
       // Buscar si hay un perfil eliminado (soft-delete) que podemos restaurar
-      const snap = await getDocs(query(collection(db, "users"), where("email", "==", email)));
+      const snap = await getDocs(query(collection(db, "users"), where("email", "==", normalizedEmail)));
       if (!snap.empty) {
         const existing = snap.docs[0];
         if (existing.data().deleted) {
           // Restaurar el perfil eliminado con los nuevos datos
-          await updateDoc(doc(db, "users", existing.id), { ...profileData, email, deleted: false, restoredAt: serverTimestamp() });
-          const restored = { id: existing.id, ...profileData, email };
+          await updateDoc(doc(db, "users", existing.id), { ...profileData, email: normalizedEmail, deleted: false, restoredAt: serverTimestamp() });
+          const restored = { id: existing.id, ...profileData, email: normalizedEmail };
           if (profileData.role === "parent" && cache.parents) cache.parents = [...cache.parents, restored];
           if (profileData.role === "teacher") cache.teachers = null;
           return existing.id;
@@ -134,8 +135,8 @@ export async function createUser(email, password, profileData) {
     }
     throw e;
   }
-  await setDoc(doc(db, "users", cred.user.uid), { ...profileData, email, createdAt: serverTimestamp() });
-  if (profileData.role === "parent" && cache.parents) cache.parents = [...cache.parents, { id: cred.user.uid, ...profileData, email }];
+  await setDoc(doc(db, "users", cred.user.uid), { ...profileData, email: normalizedEmail, createdAt: serverTimestamp() });
+  if (profileData.role === "parent" && cache.parents) cache.parents = [...cache.parents, { id: cred.user.uid, ...profileData, email: normalizedEmail }];
   if (profileData.role === "teacher") cache.teachers = null;
   return cred.user.uid;
 }
@@ -148,13 +149,14 @@ export async function updateUserProfile(uid, data) {
 // Recupera una cuenta huérfana (existe en Auth pero el perfil fue borrado).
 // Usa una app secundaria de Firebase para autenticarse sin cerrar la sesión del admin.
 export async function recoverOrphanAccount(email, currentPassword, profileData) {
+  const normalizedEmail = email.trim().toLowerCase();
   const secondaryApp = initializeApp(firebaseConfig, `recovery_${Date.now()}`);
   const secondaryAuth = getAuth(secondaryApp);
   try {
-    const cred = await signInWithEmailAndPassword(secondaryAuth, email, currentPassword);
+    const cred = await signInWithEmailAndPassword(secondaryAuth, normalizedEmail, currentPassword);
     const uid = cred.user.uid;
-    await setDoc(doc(db, "users", uid), { ...profileData, email, createdAt: serverTimestamp() });
-    if (profileData.role === "parent" && cache.parents) cache.parents = [...cache.parents, { id: uid, ...profileData, email }];
+    await setDoc(doc(db, "users", uid), { ...profileData, email: normalizedEmail, createdAt: serverTimestamp() });
+    if (profileData.role === "parent" && cache.parents) cache.parents = [...cache.parents, { id: uid, ...profileData, email: normalizedEmail }];
     if (profileData.role === "teacher") cache.teachers = null;
     return uid;
   } catch(e) {
