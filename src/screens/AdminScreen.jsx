@@ -6,7 +6,8 @@ import {
   deleteStudent, deleteUserProfile, deleteGrade, searchStudents, searchParents,
   searchObservations, getAttitudesByStudent,
   ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS,
-  getAnnouncements, createAnnouncement, deleteAnnouncement
+  getAnnouncements, createAnnouncement, deleteAnnouncement,
+  recoverOrphanAccount, updateUserProfile
 } from "../db";
 
 const GRADES = ["1°","2°","3°","4°","5°","6°"];
@@ -361,6 +362,9 @@ function ParentsTab({ setSaving }) {
   const [searchText, setSearchText] = useState(""); const [results, setResults] = useState([]); const [searched, setSearched] = useState(false); const [searching, setSearching] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editChildren, setEditChildren] = useState([]);
+  const [orphanForm, setOrphanForm] = useState(null);
+  const [orphanPassword, setOrphanPassword] = useState("");
+  const [orphanError, setOrphanError] = useState("");
 
   async function doSearch() { setSearching(true); const r=await searchParents(searchText); setResults(r); setSearched(true); setSearching(false); }
 
@@ -398,7 +402,24 @@ function ParentsTab({ setSaving }) {
       const uid=await createUser(form.email,form.password,{name:form.name,role:"parent",childIds:form.childIds,childrenNames:form.childrenNames});
       setResults(prev=>[...prev,{id:uid,role:"parent",name:form.name,email:form.email,childIds:form.childIds,childrenNames:form.childrenNames}]);
       setForm({name:"",email:"",password:"",childIds:[],childrenNames:[]});setSelectedChildren([]);setShowForm(false);
-    }catch(e){alert(e.message);}
+    }catch(e){
+      if(e.code==="auth/orphan-account"){
+        setOrphanForm({email:form.email,name:form.name,childIds:form.childIds,childrenNames:form.childrenNames});
+        setOrphanPassword(""); setOrphanError(""); setShowForm(false);
+      } else { alert(e.message); }
+    }
+    setSaving(false);
+  }
+
+  async function handleOrphanRecovery() {
+    if(!orphanPassword){setOrphanError("Ingresá la contraseña actual del tutor");return;}
+    setSaving(true); setOrphanError("");
+    try{
+      const {email,name,childIds,childrenNames}=orphanForm;
+      const uid=await recoverOrphanAccount(email,orphanPassword,{name,role:"parent",childIds,childrenNames});
+      setResults(prev=>[...prev,{id:uid,role:"parent",name,email,childIds,childrenNames}]);
+      setOrphanForm(null); setOrphanPassword("");
+    }catch(e){setOrphanError(e.message);}
     setSaving(false);
   }
 
@@ -428,6 +449,22 @@ function ParentsTab({ setSaving }) {
           {selectedChildren.length>0&&<div style={{ display:"flex",flexWrap:"wrap",gap:"6px",marginTop:"6px",marginBottom:"8px" }}>{selectedChildren.map(s=><span key={s.id} className="badge" style={{ background:"#fff7ed",color:"#7c2d12",cursor:"pointer" }} onClick={()=>toggleChild(s)}>{s.name} ✕</span>)}</div>}
           <div style={{ marginTop:"8px", marginBottom:"16px" }}><StudentSearch buttonLabel="+ Vincular" onSelect={toggleChild} /></div>
           <button className="btn-primary" onClick={addParent}>Guardar tutor</button>
+        </div>
+      )}
+
+      {orphanForm && (
+        <div className="card fade" style={{ padding:"24px", marginBottom:"20px", border:"2px solid #fca5a5", background:"#fff7f7" }}>
+          <h3 style={{ margin:"0 0 10px", color:"#991b1b" }}>Cuenta existente sin perfil</h3>
+          <p style={{ margin:"0 0 14px", fontSize:"0.9rem", color:"#374151" }}>
+            La cuenta <strong>{orphanForm.email}</strong> ya existe en el sistema pero su perfil fue eliminado.
+            Ingresá la contraseña actual del tutor para recuperar la cuenta:
+          </p>
+          <input type="password" value={orphanPassword} onChange={e=>{setOrphanPassword(e.target.value);setOrphanError("");}} placeholder="Contraseña actual del tutor..." style={{ marginBottom:"8px" }} />
+          {orphanError && <div style={{ color:"#dc2626", marginBottom:"10px", fontSize:"0.85rem" }}>{orphanError}</div>}
+          <div style={{ display:"flex", gap:"10px" }}>
+            <button className="btn-primary" onClick={handleOrphanRecovery}>Recuperar cuenta</button>
+            <button onClick={()=>setOrphanForm(null)}>Cancelar</button>
+          </div>
         </div>
       )}
 
