@@ -359,12 +359,38 @@ function ParentsTab({ setSaving }) {
   const [form, setForm] = useState({ name:"", email:"", password:"", childIds:[], childrenNames:[] });
   const [selectedChildren, setSelectedChildren] = useState([]);
   const [searchText, setSearchText] = useState(""); const [results, setResults] = useState([]); const [searched, setSearched] = useState(false); const [searching, setSearching] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editChildren, setEditChildren] = useState([]);
+
   async function doSearch() { setSearching(true); const r=await searchParents(searchText); setResults(r); setSearched(true); setSearching(false); }
+
   function toggleChild(s) {
     const already=selectedChildren.find(x=>x.id===s.id);
     if(already){setSelectedChildren(prev=>prev.filter(x=>x.id!==s.id));setForm(f=>({...f,childIds:f.childIds.filter(id=>id!==s.id),childrenNames:f.childrenNames.filter(n=>n!==s.name)}));}
     else{setSelectedChildren(prev=>[...prev,s]);setForm(f=>({...f,childIds:[...f.childIds,s.id],childrenNames:[...f.childrenNames,s.name]}));}
   }
+
+  function toggleEditChild(s) {
+    const already = editChildren.find(x => x.id === s.id);
+    if (already) setEditChildren(prev => prev.filter(x => x.id !== s.id));
+    else setEditChildren(prev => [...prev, s]);
+  }
+
+  function startEdit(p) {
+    setEditingId(p.id);
+    setEditChildren((p.childIds||[]).map((id,i) => ({ id, name: (p.childrenNames||[])[i] || id })));
+  }
+
+  async function saveEdit(p) {
+    setSaving(true);
+    const childIds = editChildren.map(c => c.id);
+    const childrenNames = editChildren.map(c => c.name);
+    await updateUserProfile(p.id, { childIds, childrenNames });
+    setResults(prev => prev.map(r => r.id===p.id ? { ...r, childIds, childrenNames } : r));
+    setEditingId(null);
+    setSaving(false);
+  }
+
   async function addParent() {
     if(!form.name||!form.email||!form.password)return;
     setSaving(true);
@@ -375,13 +401,22 @@ function ParentsTab({ setSaving }) {
     }catch(e){alert(e.message);}
     setSaving(false);
   }
-  async function removeParent(id){if(!confirm("¿Eliminar este tutor?"))return;setSaving(true);await deleteUserProfile(id);setResults(prev=>prev.filter(p=>p.id!==id));setSaving(false);}
+
+  async function removeParent(id){
+    if(!confirm("¿Eliminar este tutor? El tutor no podrá iniciar sesión. Podrás recuperar la cuenta volviendo a crearlo con el mismo email."))return;
+    setSaving(true);
+    await deleteUserProfile(id);
+    setResults(prev=>prev.filter(p=>p.id!==id));
+    setSaving(false);
+  }
+
   return (
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px" }}>
         <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>Tutores</h2>
         <button className="btn-primary" onClick={()=>setShowForm(!showForm)}>{showForm?"Cancelar":"+ Nuevo tutor"}</button>
       </div>
+
       {showForm && (
         <div className="card fade" style={{ padding:"24px", marginBottom:"20px", border:"2px solid #fed7aa" }}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"16px", marginBottom:"16px" }}>
@@ -395,6 +430,7 @@ function ParentsTab({ setSaving }) {
           <button className="btn-primary" onClick={addParent}>Guardar tutor</button>
         </div>
       )}
+
       <div className="card" style={{ padding:"24px", marginBottom:"16px" }}>
         <h3 style={{ margin:"0 0 12px", color:"#1e3a5f", fontSize:"1rem" }}>Buscar tutor</h3>
         <div style={{ display:"flex", gap:"10px" }}>
@@ -403,19 +439,55 @@ function ParentsTab({ setSaving }) {
         </div>
         {!searched&&<p style={{ color:"#94a3b8",fontSize:"0.82rem",marginTop:"10px",marginBottom:0 }}>Escribí un nombre o email y presioná Buscar.</p>}
       </div>
+
       {searched&&results.length===0&&<div className="card" style={{ padding:"32px",textAlign:"center",color:"#94a3b8" }}><p>No se encontraron tutores.</p></div>}
+
       {results.length>0&&(
         <div style={{ display:"flex",flexDirection:"column",gap:"10px" }}>
           {results.map(p=>(
-            <div key={p.id} className="card" style={{ padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center" }}>
-              <div style={{ flex:1 }}>
-                <div style={{ fontWeight:700,color:"#1e293b",fontSize:"0.95rem" }}>{p.name}</div>
-                <div style={{ fontSize:"0.82rem",color:"#64748b",marginTop:"2px" }}>{p.email}</div>
-                <div style={{ marginTop:"6px",display:"flex",flexWrap:"wrap",gap:"4px" }}>
-                  {(p.childrenNames||[]).length>0?(p.childrenNames||[]).map((n,i)=><span key={i} className="badge" style={{ background:"#fff7ed",color:"#7c2d12" }}>{n}</span>):<span style={{ fontSize:"0.78rem",color:"#94a3b8" }}>Sin hijos vinculados</span>}
+            <div key={p.id} className="card" style={{ overflow:"hidden", border: editingId===p.id?"2px solid #1e3a5f":"2px solid transparent" }}>
+              <div style={{ padding:"16px 20px", display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontWeight:700,color:"#1e293b",fontSize:"0.95rem" }}>{p.name}</div>
+                  <div style={{ fontSize:"0.82rem",color:"#64748b",marginTop:"2px" }}>{p.email}</div>
+                  <div style={{ marginTop:"6px",display:"flex",flexWrap:"wrap",gap:"4px" }}>
+                    {(p.childrenNames||[]).length>0
+                      ? (p.childrenNames||[]).map((n,i)=><span key={i} className="badge" style={{ background:"#fff7ed",color:"#7c2d12" }}>{n}</span>)
+                      : <span style={{ fontSize:"0.78rem",color:"#94a3b8" }}>Sin hijos vinculados</span>}
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:"8px", marginLeft:"16px", flexShrink:0 }}>
+                  <button
+                    onClick={()=>{ if(editingId===p.id){setEditingId(null);}else{startEdit(p);} }}
+                    style={{ padding:"6px 14px", borderRadius:"8px", background: editingId===p.id?"#f1f5f9":"#dbeafe", color: editingId===p.id?"#64748b":"#1e40af", border:"none", cursor:"pointer", fontWeight:600, fontSize:"0.82rem" }}
+                  >
+                    {editingId===p.id ? "Cancelar" : "✏ Editar hijos"}
+                  </button>
+                  <button className="btn-danger" onClick={()=>removeParent(p.id)}>Eliminar</button>
                 </div>
               </div>
-              <button className="btn-danger" onClick={()=>removeParent(p.id)} style={{ marginLeft:"16px" }}>Eliminar</button>
+
+              {/* Panel de edición inline */}
+              {editingId===p.id && (
+                <div style={{ padding:"16px 20px", borderTop:"1px solid #e2e8f0", background:"#f8fafc" }}>
+                  <div style={{ fontSize:"0.82rem", fontWeight:700, color:"#1e3a5f", marginBottom:"10px" }}>
+                    Hijos vinculados ({editChildren.length})
+                  </div>
+                  {editChildren.length > 0 && (
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:"6px", marginBottom:"12px" }}>
+                      {editChildren.map(c => (
+                        <span key={c.id} className="badge" style={{ background:"#fff7ed", color:"#7c2d12", cursor:"pointer", padding:"5px 12px" }} onClick={()=>toggleEditChild(c)}>
+                          {c.name} ✕
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ marginBottom:"14px" }}>
+                    <StudentSearch buttonLabel="+ Agregar hijo" onSelect={s => { if(!editChildren.find(c=>c.id===s.id)) setEditChildren(prev=>[...prev,s]); }} />
+                  </div>
+                  <button className="btn-primary" onClick={()=>saveEdit(p)}>Guardar cambios</button>
+                </div>
+              )}
             </div>
           ))}
         </div>
