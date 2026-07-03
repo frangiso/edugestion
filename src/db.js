@@ -88,7 +88,7 @@ export async function getAllTeachers() {
 export async function searchParents(searchText = "") {
   if (!cache.parents) {
     const snap = await getDocs(query(collection(db, "users"), where("role", "==", "parent")));
-    cache.parents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    cache.parents = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !p.deleted);
   }
   let results = cache.parents;
   if (searchText) {
@@ -101,7 +101,26 @@ export async function searchParents(searchText = "") {
 export async function createUser(email, password, profileData) {
   let cred;
   try { cred = await createUserWithEmailAndPassword(auth, email, password); }
-  catch(e) { if (e.code === 'auth/email-already-in-use') throw new Error("Este email ya está registrado."); throw e; }
+  catch(e) {
+    if (e.code === 'auth/email-already-in-use') {
+      // Buscar si hay un perfil eliminado (soft-delete) que podemos restaurar
+      const snap = await getDocs(query(collection(db, "users"), where("email", "==", email)));
+      if (!snap.empty) {
+        const existing = snap.docs[0];
+        if (existing.data().deleted) {
+          // Restaurar el perfil eliminado con los nuevos datos
+          await updateDoc(doc(db, "users", existing.id), { ...profileData, email, deleted: false, restoredAt: serverTimestamp() });
+          const restored = { id: existing.id, ...profileData, email };
+          if (profileData.role === "parent" && cache.parents) cache.parents = [...cache.parents, restored];
+          if (profileData.role === "teacher") cache.teachers = null;
+          return existing.id;
+        }
+        throw new Error("Este email ya está registrado en el sistema.");
+      }
+      throw new Error("Este email ya existe. Si el tutor fue eliminado por error, comunicate con soporte técnico para recuperar la cuenta desde Firebase Console.");
+    }
+    throw e;
+  }
   await setDoc(doc(db, "users", cred.user.uid), { ...profileData, email, createdAt: serverTimestamp() });
   if (profileData.role === "parent" && cache.parents) cache.parents = [...cache.parents, { id: cred.user.uid, ...profileData, email }];
   if (profileData.role === "teacher") cache.teachers = null;
@@ -114,7 +133,10 @@ export async function updateUserProfile(uid, data) {
 }
 
 export async function deleteUserProfile(uid) {
-  await deleteDoc(doc(db, "users", uid));
+  // Soft-delete: marcamos como eliminado en lugar de borrar el documento.
+  // Firebase Auth no permite eliminar usuarios desde el cliente, así que si
+  // borramos el doc de Firestore el email queda bloqueado en Auth forever.
+  await updateDoc(doc(db, "users", uid), { deleted: true, deletedAt: serverTimestamp() });
   cache.teachers = null;
   if (cache.parents) cache.parents = cache.parents.filter(p => p.id !== uid);
 }
