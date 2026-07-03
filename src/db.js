@@ -3,8 +3,18 @@ import {
   updateDoc, deleteDoc, query, where, orderBy, serverTimestamp,
   limit, startAfter, writeBatch
 } from "firebase/firestore";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, getAuth } from "firebase/auth";
+import { initializeApp, deleteApp } from "firebase/app";
 import { db, auth } from "./firebase";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyChqvtTVsS4PfW6rE9Nu0OrBRtnESsXX_4",
+  authDomain: "edugestion-f42ac.firebaseapp.com",
+  projectId: "edugestion-f42ac",
+  storageBucket: "edugestion-f42ac.firebasestorage.app",
+  messagingSenderId: "598165332218",
+  appId: "1:598165332218:web:d8bdd6ea838eef87296943"
+};
 
 // ═══════════════════════════════════════════════════════════════════
 // CACHÉ GLOBAL EN MEMORIA
@@ -117,7 +127,10 @@ export async function createUser(email, password, profileData) {
         }
         throw new Error("Este email ya está registrado en el sistema.");
       }
-      throw new Error("Este email ya existe. Si el tutor fue eliminado por error, comunicate con soporte técnico para recuperar la cuenta desde Firebase Console.");
+      // Cuenta huérfana: existe en Auth pero no en Firestore
+      const orphanErr = new Error("ORPHAN_ACCOUNT");
+      orphanErr.code = "auth/orphan-account";
+      throw orphanErr;
     }
     throw e;
   }
@@ -130,6 +143,28 @@ export async function createUser(email, password, profileData) {
 export async function updateUserProfile(uid, data) {
   await updateDoc(doc(db, "users", uid), data);
   cache.teachers = null; cache.parents = null;
+}
+
+// Recupera una cuenta huérfana (existe en Auth pero el perfil fue borrado).
+// Usa una app secundaria de Firebase para autenticarse sin cerrar la sesión del admin.
+export async function recoverOrphanAccount(email, currentPassword, profileData) {
+  const secondaryApp = initializeApp(firebaseConfig, `recovery_${Date.now()}`);
+  const secondaryAuth = getAuth(secondaryApp);
+  try {
+    const cred = await signInWithEmailAndPassword(secondaryAuth, email, currentPassword);
+    const uid = cred.user.uid;
+    await setDoc(doc(db, "users", uid), { ...profileData, email, createdAt: serverTimestamp() });
+    if (profileData.role === "parent" && cache.parents) cache.parents = [...cache.parents, { id: uid, ...profileData, email }];
+    if (profileData.role === "teacher") cache.teachers = null;
+    return uid;
+  } catch(e) {
+    if (e.code === "auth/wrong-password" || e.code === "auth/invalid-credential" || e.code === "auth/invalid-login-credentials") {
+      throw new Error("Contraseña incorrecta. Intentá con la contraseña original del tutor, o pedile que use 'Olvidé mi contraseña' en la pantalla de inicio y luego volvé a intentar.");
+    }
+    throw e;
+  } finally {
+    await deleteApp(secondaryApp);
+  }
 }
 
 export async function deleteUserProfile(uid) {
