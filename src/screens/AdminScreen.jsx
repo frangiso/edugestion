@@ -7,7 +7,8 @@ import {
   searchObservations, getAttitudesByStudent,
   ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS,
   getAnnouncements, createAnnouncement, deleteAnnouncement,
-  recoverOrphanAccount, updateUserProfile
+  recoverOrphanAccount, updateUserProfile,
+  getAllInternalObs, deleteInternalObs
 } from "../db";
 
 const GRADES = ["1°","2°","3°","4°","5°","6°"];
@@ -86,6 +87,7 @@ export default function AdminScreen({ user, profile, logout }) {
             ["allobservations","💬 Observaciones"],
             ["top6","🏆 Top 6° Año"],
             ["announcements","📢 Avisos"],
+            ["internalobs","🔒 Obs. Internas"],
             ["export","📥 Exportar Excel"],
           ].map(([k,l]) => (
             <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
@@ -106,6 +108,7 @@ export default function AdminScreen({ user, profile, logout }) {
             {tab === "allobservations" && <AllObservationsTab user={user} profile={profile} />}
             {tab === "top6"            && <Top6Tab />}
             {tab === "announcements"  && <AnnouncementsTab user={user} profile={profile} />}
+            {tab === "internalobs"    && <AllInternalObsTab />}
             {tab === "export"         && <ExportTab />}
           </div>
         )}
@@ -1317,6 +1320,98 @@ function ExportTab() {
         ⚠️ La primera exportación puede tardar unos segundos según la cantidad de datos.
         Los "–" indican que no hay notas o actitudinales cargadas para ese alumno en ese trimestre.
       </p>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// OBSERVACIONES INTERNAS — vista del director
+// Ve todas las observaciones de todos los profesores, filtra por mes
+// ═══════════════════════════════════════════════════════════════════
+function AllInternalObsTab() {
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const [obs, setObs] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [monthFilter, setMonthFilter] = useState(currentMonth);
+
+  useEffect(() => { load(currentMonth); }, []);
+
+  async function load(m) {
+    setLoading(true); setLoaded(false);
+    const r = await getAllInternalObs(m);
+    setObs(r); setLoaded(true); setLoading(false);
+  }
+
+  function handleMonthChange(m) {
+    setMonthFilter(m);
+    load(m);
+  }
+
+  async function remove(o) {
+    if (!confirm(`¿Eliminar observación de ${o.teacherName} sobre ${o.studentName}?`)) return;
+    await deleteInternalObs(o.id, o.teacherId);
+    setObs(prev => prev.filter(x => x.id !== o.id));
+  }
+
+  const monthLabel = (m) => { if (!m) return "todos los meses"; const [y,mo] = m.split("-"); const names=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]; return `${names[parseInt(mo,10)-1]} ${y}`; };
+
+  // Agrupar por alumno
+  const byStudent = {};
+  obs.forEach(o => {
+    if (!byStudent[o.studentId]) byStudent[o.studentId] = { name: o.studentName, grade: o.studentGrade, items: [] };
+    byStudent[o.studentId].items.push(o);
+  });
+
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px", flexWrap:"wrap", gap:"12px" }}>
+        <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>🔒 Observaciones Internas</h2>
+        <span style={{ fontSize:"0.82rem", color:"#94a3b8", background:"#f1f5f9", padding:"4px 12px", borderRadius:"20px" }}>Solo visible para el director</span>
+      </div>
+
+      {/* Filtro de mes */}
+      <div className="card" style={{ padding:"16px 20px", marginBottom:"20px", display:"flex", alignItems:"center", gap:"12px", flexWrap:"wrap" }}>
+        <label style={{ margin:0, fontWeight:600, color:"#1e3a5f" }}>Mes:</label>
+        <input type="month" value={monthFilter} onChange={e=>handleMonthChange(e.target.value)} style={{ width:"200px" }} />
+        {monthFilter && <button onClick={()=>handleMonthChange("")} style={{ fontSize:"0.78rem",color:"#dc2626",background:"none",border:"none",cursor:"pointer" }}>Ver todos</button>}
+        {loaded && <span style={{ fontSize:"0.82rem", color:"#94a3b8" }}>{obs.length} observación{obs.length!==1?"es":""} — {monthLabel(monthFilter)}</span>}
+      </div>
+
+      {loading && <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando...</div>}
+
+      {loaded && obs.length===0 && (
+        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"3rem" }}>🔒</div>
+          <p>No hay observaciones internas para {monthLabel(monthFilter)}</p>
+        </div>
+      )}
+
+      {loaded && Object.entries(byStudent).map(([sid, { name, grade, items }]) => (
+        <div key={sid} className="card" style={{ marginBottom:"16px", overflow:"hidden" }}>
+          <div style={{ padding:"14px 20px", background:"#1e3a5f", color:"white", display:"flex", alignItems:"center", gap:"10px" }}>
+            <span style={{ fontWeight:700, fontSize:"0.95rem" }}>{name}</span>
+            {grade && <span style={{ padding:"2px 10px", borderRadius:"20px", background:"rgba(255,255,255,0.2)", fontSize:"0.78rem" }}>{grade}</span>}
+            <span style={{ marginLeft:"auto", fontSize:"0.78rem", opacity:0.6 }}>{items.length} observación{items.length!==1?"es":""}</span>
+          </div>
+          <div>
+            {items.map(o => (
+              <div key={o.id} style={{ padding:"16px 20px", borderBottom:"1px solid #f1f5f9" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"8px", gap:"12px" }}>
+                  <div>
+                    <span style={{ fontWeight:600, color:"#7c3aed", fontSize:"0.85rem" }}>Prof. {o.teacherName}</span>
+                    <span style={{ fontSize:"0.78rem", color:"#94a3b8", marginLeft:"10px" }}>
+                      🗓 {monthLabel(o.month)}{o.date && ` · ${o.date}`}
+                    </span>
+                  </div>
+                  <button onClick={()=>remove(o)} className="btn-danger" style={{ fontSize:"0.75rem", padding:"4px 10px", flexShrink:0 }}>Eliminar</button>
+                </div>
+                <p style={{ margin:0, color:"#374151", fontSize:"0.9rem", lineHeight:1.6, whiteSpace:"pre-wrap" }}>{o.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
