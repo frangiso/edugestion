@@ -679,10 +679,9 @@ export async function getInternalObsByTeacher(teacherId) {
   if (internalObsCache.byTeacher[teacherId]) return internalObsCache.byTeacher[teacherId];
   const snap = await getDocs(query(
     collection(db, "internalObservations"),
-    where("teacherId", "==", teacherId),
-    orderBy("month", "desc")
+    where("teacherId", "==", teacherId)
   ));
-  const results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const results = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.month||"").localeCompare(a.month||""));
   internalObsCache.byTeacher[teacherId] = results;
   return results;
 }
@@ -690,7 +689,7 @@ export async function getInternalObsByTeacher(teacherId) {
 export async function getAllInternalObs(month = "") {
   if (internalObsCache.allByMonth[month]) return internalObsCache.allByMonth[month];
   const q = month
-    ? query(collection(db, "internalObservations"), where("month", "==", month), orderBy("studentName"))
+    ? query(collection(db, "internalObservations"), where("month", "==", month))
     : query(collection(db, "internalObservations"), orderBy("month", "desc"));
   const snap = await getDocs(q);
   const results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
