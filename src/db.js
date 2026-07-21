@@ -666,3 +666,58 @@ export async function loginUser(email, password) {
   const cred = await signInWithEmailAndPassword(auth, email, password);
   return cred.user;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// OBSERVACIONES INTERNAS (solo director y el propio profesor)
+// Colección: internalObservations
+// Campos: studentId, studentName, studentGrade, teacherId, teacherName,
+//         text, month (YYYY-MM), date (YYYY-MM-DD), createdAt
+// ═══════════════════════════════════════════════════════════════════
+const internalObsCache = { byTeacher: {}, allByMonth: {} };
+
+export async function getInternalObsByTeacher(teacherId) {
+  if (internalObsCache.byTeacher[teacherId]) return internalObsCache.byTeacher[teacherId];
+  const snap = await getDocs(query(
+    collection(db, "internalObservations"),
+    where("teacherId", "==", teacherId),
+    orderBy("month", "desc")
+  ));
+  const results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  internalObsCache.byTeacher[teacherId] = results;
+  return results;
+}
+
+export async function getAllInternalObs(month = "") {
+  if (internalObsCache.allByMonth[month]) return internalObsCache.allByMonth[month];
+  const q = month
+    ? query(collection(db, "internalObservations"), where("month", "==", month), orderBy("studentName"))
+    : query(collection(db, "internalObservations"), orderBy("month", "desc"));
+  const snap = await getDocs(q);
+  const results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  internalObsCache.allByMonth[month] = results;
+  return results;
+}
+
+export async function createInternalObs(data) {
+  const ref = await addDoc(collection(db, "internalObservations"), { ...data, createdAt: serverTimestamp() });
+  const newObs = { id: ref.id, ...data };
+  if (internalObsCache.byTeacher[data.teacherId]) internalObsCache.byTeacher[data.teacherId] = [newObs, ...internalObsCache.byTeacher[data.teacherId]];
+  internalObsCache.allByMonth = {};
+  return ref.id;
+}
+
+export async function updateInternalObs(id, teacherId, updates) {
+  await updateDoc(doc(db, "internalObservations", id), updates);
+  if (internalObsCache.byTeacher[teacherId]) {
+    internalObsCache.byTeacher[teacherId] = internalObsCache.byTeacher[teacherId].map(o => o.id === id ? { ...o, ...updates } : o);
+  }
+  internalObsCache.allByMonth = {};
+}
+
+export async function deleteInternalObs(id, teacherId) {
+  await deleteDoc(doc(db, "internalObservations", id));
+  if (internalObsCache.byTeacher[teacherId]) {
+    internalObsCache.byTeacher[teacherId] = internalObsCache.byTeacher[teacherId].filter(o => o.id !== id);
+  }
+  internalObsCache.allByMonth = {};
+}

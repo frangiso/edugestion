@@ -9,6 +9,7 @@ import {
   getAttitudesByTeacher, saveAttitude, saveAttitudesBatch, deleteAttitude,
   ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS,
   getUpcomingByTeacher, getUpcomingPastByTeacher, createUpcoming, deleteUpcoming,
+  getInternalObsByTeacher, createInternalObs, updateInternalObs, deleteInternalObs,
 } from "../db";
 
 const GRADES = ["1°","2°","3°","4°","5°","6°"];
@@ -110,6 +111,7 @@ export default function TeacherScreen({ user, profile, logout }) {
             ["upcoming","📅 Próximas eval."],
             ["ranking","📊 Rendimiento"],
             ["top6","🏆 Top 6° Año"],
+            ["internalobs","🔒 Obs. Internas"],
           ].map(([k,l])=>(
             <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
           ))}
@@ -126,6 +128,7 @@ export default function TeacherScreen({ user, profile, logout }) {
             {tab==="upcoming"     && <UpcomingTab user={user} profile={profile} subject={selectedSubject} setSaving={setSaving} />}
             {tab==="ranking"      && <Ranking grades={grades} subject={selectedSubject} />}
             {tab==="top6"         && <Top6Tab />}
+            {tab==="internalobs"  && <InternalObsTeacherTab user={user} profile={profile} setSaving={setSaving} />}
           </div>
         )}
       </div>
@@ -1484,6 +1487,180 @@ function BulkAveragesView({ user, subject, allTeacherGrades, loadingAll, ensureT
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// OBSERVACIONES INTERNAS — vista del profesor
+// Solo ve las propias; no puede ver las de otros profesores
+// ═══════════════════════════════════════════════════════════════════
+function InternalObsTeacherTab({ user, profile, setSaving }) {
+  const currentMonth = new Date().toISOString().slice(0, 7); // "2025-06"
+  const [obs, setObs] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [monthFilter, setMonthFilter] = useState(currentMonth);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ studentId:"", studentName:"", studentGrade:"", text:"", month:currentMonth, date:new Date().toISOString().split("T")[0] });
+  const [editingId, setEditingId] = useState(null);
+  const [editText, setEditText] = useState("");
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    setLoading(true);
+    const r = await getInternalObsByTeacher(user.uid);
+    setObs(r); setLoaded(true); setLoading(false);
+  }
+
+  async function save() {
+    if (!form.studentId || !form.text.trim() || !form.month) { alert("Seleccioná un alumno, mes y escribí la observación"); return; }
+    setSaving(true);
+    const data = { ...form, teacherId: user.uid, teacherName: profile.name || "" };
+    const id = await createInternalObs(data);
+    setObs(prev => [{ id, ...data }, ...prev]);
+    setForm({ studentId:"", studentName:"", studentGrade:"", text:"", month:currentMonth, date:new Date().toISOString().split("T")[0] });
+    setShowForm(false); setSaving(false);
+  }
+
+  async function saveEdit(id) {
+    if (!editText.trim()) return;
+    setSaving(true);
+    await updateInternalObs(id, user.uid, { text: editText });
+    setObs(prev => prev.map(o => o.id === id ? { ...o, text: editText } : o));
+    setEditingId(null); setSaving(false);
+  }
+
+  async function remove(id) {
+    if (!confirm("¿Eliminar esta observación interna?")) return;
+    setSaving(true);
+    await deleteInternalObs(id, user.uid);
+    setObs(prev => prev.filter(o => o.id !== id)); setSaving(false);
+  }
+
+  const filtered = obs.filter(o => !monthFilter || o.month === monthFilter);
+  const byStudent = {};
+  filtered.forEach(o => {
+    if (!byStudent[o.studentId]) byStudent[o.studentId] = { name: o.studentName, grade: o.studentGrade, items: [] };
+    byStudent[o.studentId].items.push(o);
+  });
+
+  const monthLabel = (m) => { if (!m) return ""; const [y,mo] = m.split("-"); const names=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]; return `${names[parseInt(mo,10)-1]} ${y}`; };
+
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px", flexWrap:"wrap", gap:"12px" }}>
+        <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>🔒 Observaciones Internas</h2>
+        <button className="btn-primary" onClick={()=>setShowForm(!showForm)}>{showForm?"Cancelar":"+ Nueva observación"}</button>
+      </div>
+
+      {showForm && (
+        <div className="card fade" style={{ padding:"24px", marginBottom:"20px", border:"2px solid #fde68a" }}>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"16px", marginBottom:"16px" }}>
+            <div>
+              <label>Mes</label>
+              <input type="month" value={form.month} onChange={e=>setForm({...form,month:e.target.value})} />
+            </div>
+            <div>
+              <label>Fecha</label>
+              <input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} />
+            </div>
+          </div>
+          <div style={{ marginBottom:"16px" }}>
+            <label>Alumno</label>
+            <StudentSearch buttonLabel="Seleccionar" onSelect={s=>setForm({...form,studentId:s.id,studentName:s.name,studentGrade:s.grade||""})} />
+            {form.studentName && <span className="badge" style={{ marginTop:"8px",display:"inline-block",background:"#dbeafe",color:"#1e40af" }}>{form.studentName} {form.studentGrade&&`(${form.studentGrade})`}</span>}
+          </div>
+          <div style={{ marginBottom:"16px" }}>
+            <label>Observación interna</label>
+            <textarea value={form.text} onChange={e=>setForm({...form,text:e.target.value})} rows={4} style={{ width:"100%", border:"1.5px solid #cbd5e1", borderRadius:"10px", padding:"10px 14px", fontSize:"0.9rem", fontFamily:"inherit", boxSizing:"border-box" }} placeholder="Escribí la observación interna del alumno para este mes..." />
+          </div>
+          <button className="btn-primary" onClick={save}>Guardar</button>
+        </div>
+      )}
+
+      {/* Filtro de mes */}
+      <div className="card" style={{ padding:"16px 20px", marginBottom:"16px", display:"flex", alignItems:"center", gap:"12px", flexWrap:"wrap" }}>
+        <label style={{ margin:0, fontWeight:600, color:"#1e3a5f" }}>Filtrar por mes:</label>
+        <input type="month" value={monthFilter} onChange={e=>setMonthFilter(e.target.value)} style={{ width:"180px" }} />
+        {monthFilter && <button onClick={()=>setMonthFilter("")} style={{ fontSize:"0.78rem",color:"#dc2626",background:"none",border:"none",cursor:"pointer" }}>Ver todos</button>}
+        <span style={{ fontSize:"0.82rem", color:"#94a3b8" }}>{filtered.length} observación{filtered.length!==1?"es":""}</span>
+      </div>
+
+      {loading && <div style={{ textAlign:"center",padding:"40px",color:"#94a3b8" }}>Cargando...</div>}
+
+      {loaded && filtered.length===0 && (
+        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"3rem" }}>🔒</div>
+          <p>No hay observaciones internas{monthFilter ? ` para ${monthLabel(monthFilter)}` : ""}</p>
+        </div>
+      )}
+
+      {Object.entries(byStudent).map(([sid, { name, grade, items }]) => (
+        <div key={sid} className="card" style={{ marginBottom:"16px", overflow:"hidden" }}>
+          <div style={{ padding:"14px 20px", background:"#1e3a5f", color:"white", display:"flex", alignItems:"center", gap:"10px" }}>
+            <span style={{ fontWeight:700, fontSize:"0.95rem" }}>{name}</span>
+            {grade && <span style={{ padding:"2px 10px", borderRadius:"20px", background:"rgba(255,255,255,0.15)", fontSize:"0.78rem" }}>{grade}</span>}
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:0 }}>
+            {items.map(o => (
+              <div key={o.id} style={{ padding:"14px 20px", borderBottom:"1px solid #f1f5f9" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"6px" }}>
+                  <span style={{ fontWeight:600, color:"#7c3aed", fontSize:"0.82rem" }}>🗓 {monthLabel(o.month)}{o.date&&` · ${o.date}`}</span>
+                  <div style={{ display:"flex", gap:"6px" }}>
+                    <button onClick={()=>{ setEditingId(o.id); setEditText(o.text); }} style={{ fontSize:"0.75rem",padding:"4px 10px",borderRadius:"8px",background:"#dbeafe",color:"#1e40af",border:"none",cursor:"pointer" }}>Editar</button>
+                    <button onClick={()=>remove(o.id)} className="btn-danger" style={{ fontSize:"0.75rem",padding:"4px 10px" }}>Eliminar</button>
+                  </div>
+                </div>
+                {editingId===o.id ? (
+                  <div>
+                    <textarea value={editText} onChange={e=>setEditText(e.target.value)} rows={3} style={{ width:"100%",border:"1.5px solid #7c3aed",borderRadius:"8px",padding:"8px 12px",fontSize:"0.88rem",fontFamily:"inherit",boxSizing:"border-box" }} />
+                    <div style={{ display:"flex",gap:"8px",marginTop:"8px" }}>
+                      <button className="btn-primary" onClick={()=>saveEdit(o.id)} style={{ fontSize:"0.8rem" }}>Guardar</button>
+                      <button onClick={()=>setEditingId(null)} style={{ fontSize:"0.8rem" }}>Cancelar</button>
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ margin:0, color:"#374151", fontSize:"0.9rem", lineHeight:1.6, whiteSpace:"pre-wrap" }}>{o.text}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StudentSearch({ onSelect, buttonLabel="Seleccionar" }) {
+  const [nameQ, setNameQ] = useState(""); const [gradeQ, setGradeQ] = useState("");
+  const [results, setResults] = useState([]); const [searched, setSearched] = useState(false); const [loading, setLoading] = useState(false);
+  async function doSearch() {
+    if (!nameQ && !gradeQ) return;
+    setLoading(true);
+    const r = await searchStudents({ name: nameQ, grade: gradeQ });
+    setResults(r); setSearched(true); setLoading(false);
+  }
+  return (
+    <div style={{ marginTop:"8px" }}>
+      <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"8px" }}>
+        <input value={nameQ} onChange={e=>setNameQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch()} placeholder="Nombre..." style={{ flex:1, minWidth:"140px" }} />
+        <select value={gradeQ} onChange={e=>setGradeQ(e.target.value)} style={{ width:"90px" }}>
+          <option value="">Año</option>
+          {["1°","2°","3°","4°","5°","6°"].map(g=><option key={g}>{g}</option>)}
+        </select>
+        <button onClick={doSearch} disabled={loading} style={{ padding:"8px 16px",borderRadius:"8px",background:"#1e3a5f",color:"white",border:"none",cursor:"pointer",fontSize:"0.82rem" }}>{loading?"...":"Buscar"}</button>
+      </div>
+      {searched && results.length===0 && <p style={{ fontSize:"0.82rem",color:"#94a3b8",margin:"4px 0" }}>Sin resultados</p>}
+      <div style={{ display:"flex",flexDirection:"column",gap:"4px" }}>
+        {results.slice(0,5).map(s=>(
+          <div key={s.id} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",background:"#f8fafc",borderRadius:"8px",border:"1px solid #e2e8f0" }}>
+            <span style={{ fontSize:"0.85rem" }}>{s.name} <span style={{ color:"#94a3b8" }}>({s.grade})</span></span>
+            <button onClick={()=>{ onSelect(s); setResults([]); setNameQ(""); setGradeQ(""); setSearched(false); }} style={{ fontSize:"0.78rem",padding:"4px 10px",borderRadius:"6px",background:"#1e3a5f",color:"white",border:"none",cursor:"pointer" }}>{buttonLabel}</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
