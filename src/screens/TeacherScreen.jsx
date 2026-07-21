@@ -1169,7 +1169,6 @@ function StudentGradesTab({ user, subject, setSaving }) {
 
   async function selectStudent(s) {
     setSelectedStudent(s);
-    setSearchResults([]);
     setLoadingGrades(true);
     await ensureTeacherGrades();
     setLoadingGrades(false);
@@ -1180,6 +1179,12 @@ function StudentGradesTab({ user, subject, setSaving }) {
     setNameQ("");
     setGradeQ("");
     setSearchResults([]);
+  }
+
+  function navigateStudent(dir) {
+    const idx = searchResults.findIndex(s => s.id === selectedStudent?.id);
+    const next = searchResults[idx + dir];
+    if (next) selectStudent(next);
   }
 
   // Notas del alumno seleccionado en la materia activa
@@ -1257,17 +1262,38 @@ function StudentGradesTab({ user, subject, setSaving }) {
           ) : (
             <div>
               {/* Header alumno */}
-              <div className="card" style={{ padding:"16px 24px", marginBottom:"20px", display:"flex", justifyContent:"space-between", alignItems:"center", borderLeft:"5px solid #1e3a5f" }}>
+              <div className="card" style={{ padding:"16px 24px", marginBottom:"20px", display:"flex", justifyContent:"space-between", alignItems:"center", borderLeft:"5px solid #1e3a5f", flexWrap:"wrap", gap:"12px" }}>
                 <div>
                   <div style={{ fontWeight:700, color:"#1e293b", fontSize:"1.05rem" }}>{selectedStudent.name}</div>
                   <div style={{ display:"flex", gap:"8px", marginTop:"4px", flexWrap:"wrap" }}>
                     <span className="badge" style={{ background:"#dbeafe", color:"#1e40af" }}>{selectedStudent.grade}</span>
                     <span className="badge" style={{ background:"#d1fae5", color:"#065f46" }}>{subject}</span>
+                    {searchResults.length > 1 && (
+                      <span style={{ fontSize:"0.75rem", color:"#94a3b8" }}>
+                        {searchResults.findIndex(s=>s.id===selectedStudent.id)+1} de {searchResults.length}
+                      </span>
+                    )}
                   </div>
                 </div>
-                <button onClick={clearStudent} style={{ padding:"8px 16px", borderRadius:"10px", border:"1px solid #e2e8f0", cursor:"pointer", background:"white", color:"#64748b", fontSize:"0.85rem" }}>
-                  ← Buscar otro
-                </button>
+                <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
+                  {searchResults.length > 1 && (
+                    <>
+                      <button
+                        onClick={() => navigateStudent(-1)}
+                        disabled={searchResults.findIndex(s=>s.id===selectedStudent.id) === 0}
+                        style={{ padding:"8px 14px", borderRadius:"10px", border:"1px solid #e2e8f0", cursor:"pointer", background:"white", color:"#1e3a5f", fontSize:"0.85rem", fontWeight:600, opacity: searchResults.findIndex(s=>s.id===selectedStudent.id)===0 ? 0.3 : 1 }}
+                      >← Anterior</button>
+                      <button
+                        onClick={() => navigateStudent(1)}
+                        disabled={searchResults.findIndex(s=>s.id===selectedStudent.id) === searchResults.length - 1}
+                        style={{ padding:"8px 14px", borderRadius:"10px", border:"1px solid #e2e8f0", cursor:"pointer", background:"white", color:"#1e3a5f", fontSize:"0.85rem", fontWeight:600, opacity: searchResults.findIndex(s=>s.id===selectedStudent.id)===searchResults.length-1 ? 0.3 : 1 }}
+                      >Siguiente →</button>
+                    </>
+                  )}
+                  <button onClick={clearStudent} style={{ padding:"8px 16px", borderRadius:"10px", border:"1px solid #e2e8f0", cursor:"pointer", background:"white", color:"#64748b", fontSize:"0.85rem" }}>
+                    Buscar otro
+                  </button>
+                </div>
               </div>
 
               {loadingGrades ? (

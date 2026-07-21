@@ -1337,6 +1337,9 @@ function AllInternalObsTab() {
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [monthFilter, setMonthFilter] = useState(currentMonth);
+  const [teacherFilter, setTeacherFilter] = useState("");
+  const [gradeFilter, setGradeFilter] = useState("");
+  const [studentFilter, setStudentFilter] = useState("");
 
   useEffect(() => { load(currentMonth); }, []);
 
@@ -1346,10 +1349,7 @@ function AllInternalObsTab() {
     setObs(r); setLoaded(true); setLoading(false);
   }
 
-  function handleMonthChange(m) {
-    setMonthFilter(m);
-    load(m);
-  }
+  function handleMonthChange(m) { setMonthFilter(m); load(m); }
 
   async function remove(o) {
     if (!confirm(`¿Eliminar observación de ${o.teacherName} sobre ${o.studentName}?`)) return;
@@ -1359,12 +1359,25 @@ function AllInternalObsTab() {
 
   const monthLabel = (m) => { if (!m) return "todos los meses"; const [y,mo] = m.split("-"); const names=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]; return `${names[parseInt(mo,10)-1]} ${y}`; };
 
+  // Listas únicas para los selects
+  const teachers = [...new Set(obs.map(o => o.teacherName).filter(Boolean))].sort();
+  const grades   = [...new Set(obs.map(o => o.studentGrade).filter(Boolean))].sort();
+
+  // Filtrado cliente
+  const filtered = obs.filter(o =>
+    (!teacherFilter || o.teacherName === teacherFilter) &&
+    (!gradeFilter   || o.studentGrade === gradeFilter) &&
+    (!studentFilter || o.studentName?.toLowerCase().includes(studentFilter.toLowerCase()))
+  );
+
   // Agrupar por alumno
   const byStudent = {};
-  obs.forEach(o => {
+  filtered.forEach(o => {
     if (!byStudent[o.studentId]) byStudent[o.studentId] = { name: o.studentName, grade: o.studentGrade, items: [] };
     byStudent[o.studentId].items.push(o);
   });
+
+  const hasFilters = teacherFilter || gradeFilter || studentFilter;
 
   return (
     <div>
@@ -1373,20 +1386,52 @@ function AllInternalObsTab() {
         <span style={{ fontSize:"0.82rem", color:"#94a3b8", background:"#f1f5f9", padding:"4px 12px", borderRadius:"20px" }}>Solo visible para el director</span>
       </div>
 
-      {/* Filtro de mes */}
-      <div className="card" style={{ padding:"16px 20px", marginBottom:"20px", display:"flex", alignItems:"center", gap:"12px", flexWrap:"wrap" }}>
-        <label style={{ margin:0, fontWeight:600, color:"#1e3a5f" }}>Mes:</label>
-        <input type="month" value={monthFilter} onChange={e=>handleMonthChange(e.target.value)} style={{ width:"200px" }} />
-        {monthFilter && <button onClick={()=>handleMonthChange("")} style={{ fontSize:"0.78rem",color:"#dc2626",background:"none",border:"none",cursor:"pointer" }}>Ver todos</button>}
-        {loaded && <span style={{ fontSize:"0.82rem", color:"#94a3b8" }}>{obs.length} observación{obs.length!==1?"es":""} — {monthLabel(monthFilter)}</span>}
+      {/* Filtros */}
+      <div className="card" style={{ padding:"16px 20px", marginBottom:"20px" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:"12px", marginBottom:"10px" }}>
+          <div>
+            <label style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:"0.5px" }}>Mes</label>
+            <input type="month" value={monthFilter} onChange={e=>handleMonthChange(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:"0.5px" }}>Profesor</label>
+            <select value={teacherFilter} onChange={e=>setTeacherFilter(e.target.value)}>
+              <option value="">Todos los profesores</option>
+              {teachers.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:"0.5px" }}>Curso</label>
+            <select value={gradeFilter} onChange={e=>setGradeFilter(e.target.value)}>
+              <option value="">Todos los cursos</option>
+              {grades.map(g => <option key={g}>{g}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:"0.5px" }}>Alumno</label>
+            <input value={studentFilter} onChange={e=>setStudentFilter(e.target.value)} placeholder="Buscar alumno..." />
+          </div>
+        </div>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:"8px" }}>
+          {hasFilters && (
+            <button onClick={()=>{setTeacherFilter("");setGradeFilter("");setStudentFilter("");}} style={{ fontSize:"0.78rem",color:"#dc2626",background:"none",border:"none",cursor:"pointer" }}>
+              ✕ Limpiar filtros
+            </button>
+          )}
+          {loaded && (
+            <span style={{ fontSize:"0.82rem", color:"#94a3b8", marginLeft:"auto" }}>
+              {filtered.length} observación{filtered.length!==1?"es":""} · {monthLabel(monthFilter)}
+            </span>
+          )}
+        </div>
       </div>
 
       {loading && <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando...</div>}
 
-      {loaded && obs.length===0 && (
+      {loaded && filtered.length===0 && (
         <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
           <div style={{ fontSize:"3rem" }}>🔒</div>
-          <p>No hay observaciones internas para {monthLabel(monthFilter)}</p>
+          <p>No hay observaciones que coincidan con los filtros aplicados</p>
         </div>
       )}
 
