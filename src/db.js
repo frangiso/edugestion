@@ -5,7 +5,8 @@ import {
 } from "firebase/firestore";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, getAuth } from "firebase/auth";
 import { initializeApp, deleteApp } from "firebase/app";
-import { db, auth } from "./firebase";
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { db, auth, storage } from "./firebase";
 
 const firebaseConfig = {
   apiKey: "AIzaSyChqvtTVsS4PfW6rE9Nu0OrBRtnESsXX_4",
@@ -720,4 +721,50 @@ export async function deleteInternalObs(id, teacherId) {
     internalObsCache.byTeacher[teacherId] = internalObsCache.byTeacher[teacherId].filter(o => o.id !== id);
   }
   internalObsCache.allByMonth = {};
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DOCUMENTACIÓN / INFORMES DE ALUMNOS (solo director)
+// Storage: studentDocs/{studentId}/{timestamp}_{filename}
+// Firestore: studentDocuments { studentId, studentName, studentGrade,
+//   fileName, storagePath, fileType, url, description, uploadedAt }
+// ═══════════════════════════════════════════════════════════════════
+const studentDocsCache = {};
+
+export async function uploadStudentDoc(studentId, studentName, studentGrade, file, description = "") {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `studentDocs/${studentId}/${Date.now()}_${safeName}`;
+  const storageRef = ref(storage, path);
+  await uploadBytes(storageRef, file);
+  const url = await getDownloadURL(storageRef);
+  const newDoc = {
+    studentId, studentName, studentGrade,
+    fileName: file.name,
+    storagePath: path,
+    fileType: file.type,
+    url, description,
+    uploadedAt: new Date().toISOString().split("T")[0],
+  };
+  const docRef = await addDoc(collection(db, "studentDocuments"), { ...newDoc, createdAt: serverTimestamp() });
+  const result = { id: docRef.id, ...newDoc };
+  if (studentDocsCache[studentId]) studentDocsCache[studentId] = [result, ...studentDocsCache[studentId]];
+  return result;
+}
+
+export async function getStudentDocs(studentId) {
+  if (studentDocsCache[studentId]) return studentDocsCache[studentId];
+  const snap = await getDocs(query(
+    collection(db, "studentDocuments"),
+    where("studentId", "==", studentId),
+    orderBy("createdAt", "desc")
+  ));
+  const results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  studentDocsCache[studentId] = results;
+  return results;
+}
+
+export async function deleteStudentDoc(id, storagePath, studentId) {
+  await deleteDoc(doc(db, "studentDocuments", id));
+  try { await deleteObject(ref(storage, storagePath)); } catch (_) {}
+  if (studentDocsCache[studentId]) studentDocsCache[studentId] = studentDocsCache[studentId].filter(d => d.id !== id);
 }

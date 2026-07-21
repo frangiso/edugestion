@@ -8,7 +8,8 @@ import {
   ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS,
   getAnnouncements, createAnnouncement, deleteAnnouncement,
   recoverOrphanAccount, updateUserProfile,
-  getAllInternalObs, deleteInternalObs
+  getAllInternalObs, deleteInternalObs,
+  uploadStudentDoc, getStudentDocs, deleteStudentDoc
 } from "../db";
 
 const GRADES = ["1°","2°","3°","4°","5°","6°"];
@@ -88,6 +89,7 @@ export default function AdminScreen({ user, profile, logout }) {
             ["top6","🏆 Top 6° Año"],
             ["announcements","📢 Avisos"],
             ["internalobs","🔒 Obs. Internas"],
+            ["documents","📁 Documentación"],
             ["export","📥 Exportar Excel"],
           ].map(([k,l]) => (
             <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
@@ -109,6 +111,7 @@ export default function AdminScreen({ user, profile, logout }) {
             {tab === "top6"            && <Top6Tab />}
             {tab === "announcements"  && <AnnouncementsTab user={user} profile={profile} />}
             {tab === "internalobs"    && <AllInternalObsTab />}
+            {tab === "documents"      && <DocumentsTab setSaving={setSaving} />}
             {tab === "export"         && <ExportTab />}
           </div>
         )}
@@ -1412,6 +1415,197 @@ function AllInternalObsTab() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// DOCUMENTACIÓN / INFORMES DE ALUMNOS — solo director
+// ════════════════════════════════════════════════════════════════════
+function DocumentsTab({ setSaving }) {
+  const GRADES = ["1°","2°","3°","4°","5°","6°"];
+  const [gradeFilter, setGradeFilter] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [students, setStudents] = useState([]);
+  const [searched, setSearched] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
+  const [docsMap, setDocsMap] = useState({});       // { studentId: [] }
+  const [docsLoaded, setDocsLoaded] = useState({}); // { studentId: true }
+  const [uploading, setUploading] = useState({});   // { studentId: true }
+  const [descMap, setDescMap] = useState({});        // { studentId: "descripción" }
+
+  async function doSearch() {
+    if (!nameFilter && !gradeFilter) return;
+    setSearching(true);
+    const r = await searchStudents({ name: nameFilter, grade: gradeFilter });
+    setStudents(r); setSearched(true); setSearching(false);
+  }
+
+  async function loadDocs(studentId) {
+    if (docsLoaded[studentId]) return;
+    const docs = await getStudentDocs(studentId);
+    setDocsMap(prev => ({ ...prev, [studentId]: docs }));
+    setDocsLoaded(prev => ({ ...prev, [studentId]: true }));
+  }
+
+  function toggleExpand(s) {
+    if (expandedId === s.id) { setExpandedId(null); return; }
+    setExpandedId(s.id);
+    loadDocs(s.id);
+  }
+
+  async function handleUpload(student, e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const MAX = 20 * 1024 * 1024; // 20 MB
+    if (file.size > MAX) { alert("El archivo no puede superar 20 MB"); return; }
+    const allowed = ["application/pdf","image/jpeg","image/png","image/webp","image/heic"];
+    if (!allowed.includes(file.type) && !file.name.match(/\.(pdf|jpg|jpeg|png|webp|heic)$/i)) {
+      alert("Solo se permiten archivos PDF e imágenes (JPG, PNG, WEBP)"); return;
+    }
+    setSaving(true);
+    setUploading(prev => ({ ...prev, [student.id]: true }));
+    try {
+      const desc = descMap[student.id] || "";
+      const newDoc = await uploadStudentDoc(student.id, student.name, student.grade || "", file, desc);
+      setDocsMap(prev => ({ ...prev, [student.id]: [newDoc, ...(prev[student.id] || [])] }));
+      setDescMap(prev => ({ ...prev, [student.id]: "" }));
+    } catch(err) { alert("Error al subir el archivo: " + err.message); }
+    setUploading(prev => ({ ...prev, [student.id]: false }));
+    setSaving(false);
+    e.target.value = "";
+  }
+
+  async function handleDelete(studentId, docItem) {
+    if (!confirm(`¿Eliminar "${docItem.fileName}"?`)) return;
+    setSaving(true);
+    await deleteStudentDoc(docItem.id, docItem.storagePath, studentId);
+    setDocsMap(prev => ({ ...prev, [studentId]: prev[studentId].filter(d => d.id !== docItem.id) }));
+    setSaving(false);
+  }
+
+  function fileIcon(fileType, fileName) {
+    if (fileType === "application/pdf" || fileName?.toLowerCase().endsWith(".pdf")) return "📄";
+    if (fileType?.startsWith("image/")) return "🖼️";
+    return "📎";
+  }
+
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px" }}>
+        <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>📁 Documentación / Informes</h2>
+        <span style={{ fontSize:"0.82rem", color:"#94a3b8", background:"#f1f5f9", padding:"4px 12px", borderRadius:"20px" }}>Solo visible para el director</span>
+      </div>
+
+      {/* Filtros */}
+      <div className="card" style={{ padding:"20px", marginBottom:"20px" }}>
+        <div style={{ display:"flex", gap:"10px", flexWrap:"wrap" }}>
+          <input
+            value={nameFilter}
+            onChange={e => setNameFilter(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && doSearch()}
+            placeholder="🔍 Nombre del alumno..."
+            style={{ flex:1, minWidth:"200px" }}
+          />
+          <select value={gradeFilter} onChange={e => setGradeFilter(e.target.value)} style={{ width:"110px" }}>
+            <option value="">Todos los años</option>
+            {GRADES.map(g => <option key={g}>{g}</option>)}
+          </select>
+          <button className="btn-primary" onClick={doSearch} disabled={searching}>
+            {searching ? "Buscando..." : "Buscar"}
+          </button>
+        </div>
+        {!searched && <p style={{ margin:"10px 0 0", fontSize:"0.82rem", color:"#94a3b8" }}>Buscá por nombre o año para ver los alumnos.</p>}
+      </div>
+
+      {searched && students.length === 0 && (
+        <div className="card" style={{ padding:"40px", textAlign:"center", color:"#94a3b8" }}>
+          <p>No se encontraron alumnos.</p>
+        </div>
+      )}
+
+      <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
+        {students.map(s => {
+          const isOpen = expandedId === s.id;
+          const docs = docsMap[s.id] || [];
+          const loaded = docsLoaded[s.id];
+          const isUploading = uploading[s.id];
+
+          return (
+            <div key={s.id} className="card" style={{ overflow:"hidden", border: isOpen ? "2px solid #1e3a5f" : "2px solid transparent" }}>
+              {/* Cabecera del alumno */}
+              <div
+                style={{ padding:"16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer", background: isOpen ? "#f0f4f8" : "white" }}
+                onClick={() => toggleExpand(s)}
+              >
+                <div style={{ display:"flex", alignItems:"center", gap:"14px" }}>
+                  <div style={{ width:"40px", height:"40px", borderRadius:"50%", background:"#1e3a5f", display:"flex", alignItems:"center", justifyContent:"center", color:"white", fontWeight:700, fontSize:"1rem", flexShrink:0 }}>
+                    {s.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight:700, color:"#1e293b", fontSize:"0.95rem" }}>{s.name}</div>
+                    {s.grade && <span className="badge" style={{ background:"#dbeafe", color:"#1e40af", marginTop:"2px" }}>{s.grade}</span>}
+                  </div>
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:"12px" }}>
+                  {loaded && <span style={{ fontSize:"0.78rem", color:"#64748b" }}>{docs.length} archivo{docs.length !== 1 ? "s" : ""}</span>}
+                  <span style={{ fontSize:"1.2rem", color:"#64748b" }}>{isOpen ? "▲" : "▼"}</span>
+                </div>
+              </div>
+
+              {/* Panel expandido */}
+              {isOpen && (
+                <div style={{ padding:"20px", borderTop:"1px solid #e2e8f0", background:"#fafbfc" }}>
+                  {/* Subir archivo */}
+                  <div style={{ marginBottom:"20px", padding:"16px", background:"white", borderRadius:"12px", border:"1.5px dashed #cbd5e1" }}>
+                    <div style={{ fontWeight:600, color:"#1e3a5f", marginBottom:"10px", fontSize:"0.9rem" }}>Subir nuevo archivo</div>
+                    <input
+                      value={descMap[s.id] || ""}
+                      onChange={e => setDescMap(prev => ({ ...prev, [s.id]: e.target.value }))}
+                      placeholder="Descripción del archivo (ej: Informe psicopedagógico 2025)..."
+                      style={{ marginBottom:"10px" }}
+                    />
+                    <div style={{ display:"flex", alignItems:"center", gap:"10px", flexWrap:"wrap" }}>
+                      <label style={{ display:"inline-flex", alignItems:"center", gap:"8px", padding:"8px 18px", borderRadius:"8px", background:"#1e3a5f", color:"white", cursor:"pointer", fontSize:"0.85rem", fontWeight:600 }}>
+                        {isUploading ? "⏳ Subiendo..." : "📎 Elegir archivo"}
+                        <input type="file" accept=".pdf,image/*" style={{ display:"none" }} onChange={e => handleUpload(s, e)} disabled={isUploading} />
+                      </label>
+                      <span style={{ fontSize:"0.75rem", color:"#94a3b8" }}>PDF e imágenes hasta 20 MB</span>
+                    </div>
+                  </div>
+
+                  {/* Lista de documentos */}
+                  {!loaded && <div style={{ textAlign:"center", padding:"20px", color:"#94a3b8" }}>Cargando...</div>}
+                  {loaded && docs.length === 0 && (
+                    <div style={{ textAlign:"center", padding:"24px", color:"#94a3b8", fontSize:"0.88rem" }}>
+                      Sin archivos cargados aún.
+                    </div>
+                  )}
+                  {loaded && docs.length > 0 && (
+                    <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
+                      {docs.map(d => (
+                        <div key={d.id} style={{ display:"flex", alignItems:"center", gap:"12px", padding:"12px 16px", background:"white", borderRadius:"10px", border:"1px solid #e2e8f0" }}>
+                          <span style={{ fontSize:"1.6rem", flexShrink:0 }}>{fileIcon(d.fileType, d.fileName)}</span>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontWeight:600, color:"#1e293b", fontSize:"0.88rem", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.fileName}</div>
+                            {d.description && <div style={{ fontSize:"0.78rem", color:"#7c3aed", marginTop:"2px" }}>{d.description}</div>}
+                            <div style={{ fontSize:"0.75rem", color:"#94a3b8", marginTop:"2px" }}>{d.uploadedAt}</div>
+                          </div>
+                          <div style={{ display:"flex", gap:"6px", flexShrink:0 }}>
+                            <a href={d.url} target="_blank" rel="noopener noreferrer" style={{ padding:"6px 14px", borderRadius:"8px", background:"#dbeafe", color:"#1e40af", textDecoration:"none", fontSize:"0.78rem", fontWeight:600 }}>Ver</a>
+                            <button className="btn-danger" onClick={() => handleDelete(s.id, d)} style={{ fontSize:"0.78rem", padding:"6px 10px" }}>Eliminar</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
