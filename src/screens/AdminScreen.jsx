@@ -1503,11 +1503,11 @@ function DocumentsTab({ setSaving }) {
   async function handleUpload(student, e) {
     const file = e.target.files[0];
     if (!file) return;
-    const MAX = 20 * 1024 * 1024; // 20 MB
-    if (file.size > MAX) { alert("El archivo no puede superar 20 MB"); return; }
+    const MAX = 20 * 1024 * 1024;
+    if (file.size > MAX) { alert("El archivo no puede superar 20 MB"); e.target.value = ""; return; }
     const allowed = ["application/pdf","image/jpeg","image/png","image/webp","image/heic"];
     if (!allowed.includes(file.type) && !file.name.match(/\.(pdf|jpg|jpeg|png|webp|heic)$/i)) {
-      alert("Solo se permiten archivos PDF e imágenes (JPG, PNG, WEBP)"); return;
+      alert("Solo se permiten archivos PDF e imágenes (JPG, PNG, WEBP)"); e.target.value = ""; return;
     }
     setSaving(true);
     setUploading(prev => ({ ...prev, [student.id]: true }));
@@ -1516,10 +1516,16 @@ function DocumentsTab({ setSaving }) {
       const newDoc = await uploadStudentDoc(student.id, student.name, student.grade || "", file, desc);
       setDocsMap(prev => ({ ...prev, [student.id]: [newDoc, ...(prev[student.id] || [])] }));
       setDescMap(prev => ({ ...prev, [student.id]: "" }));
-    } catch(err) { alert("Error al subir el archivo: " + err.message); }
-    setUploading(prev => ({ ...prev, [student.id]: false }));
-    setSaving(false);
-    e.target.value = "";
+    } catch(err) {
+      const msg = err.code === "storage/unauthorized"
+        ? "Sin permisos para subir archivos. Configurá las reglas de Firebase Storage en la consola."
+        : `Error al subir el archivo: ${err.message}`;
+      alert(msg);
+    } finally {
+      setUploading(prev => ({ ...prev, [student.id]: false }));
+      setSaving(false);
+      e.target.value = "";
+    }
   }
 
   async function handleDelete(studentId, docItem) {
