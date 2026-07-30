@@ -14,6 +14,18 @@ import {
 
 const GRADES = ["1°","2°","3°","4°","5°","6°"];
 
+// Detecta el trimestre actual según el calendario escolar
+// 1°: 25/feb – 27/may | 2°: 28/may – 15/sep | 3°: 16/sep – 18/dic
+function getCurrentTrimester() {
+  const now = new Date();
+  const m = now.getMonth() + 1;
+  const d = now.getDate();
+  if ((m === 2 && d >= 25) || m === 3 || m === 4 || (m === 5 && d <= 27)) return 1;
+  if ((m === 5 && d >= 28) || m === 6 || m === 7 || m === 8 || (m === 9 && d <= 15)) return 2;
+  if ((m === 9 && d >= 16) || m === 10 || m === 11 || (m === 12 && d <= 18)) return 3;
+  return 1;
+}
+
 // Convierte valor actitudinal a número para promediar
 const ATTITUDE_NUM = { PD:1, DB:2, DM:3, DA:4 };
 // Convierte número a valor más cercano
@@ -143,12 +155,12 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
   const [mode, setMode] = useState("individual"); // individual | bulk
   // --- Individual ---
   const [nameQ, setNameQ] = useState(""); const [gradeQ, setGradeQ] = useState(""); const [searchResults, setSearchResults] = useState([]); const [searching, setSearching] = useState(false); const [selectedStudent, setSelectedStudent] = useState(null);
-  const [form, setForm] = useState({ score:"", type:"Examen", trimester:1, date:new Date().toISOString().split("T")[0], note:"" });
+  const [form, setForm] = useState({ score:"", type:"Examen", trimester:getCurrentTrimester(), date:new Date().toISOString().split("T")[0], note:"" });
   const [success, setSuccess] = useState(false);
   const [newType, setNewType] = useState(""); const [showNewType, setShowNewType] = useState(false);
   // --- Bulk ---
   const [bulkGrade, setBulkGrade] = useState(""); const [bulkStudents, setBulkStudents] = useState([]); const [bulkLoading, setBulkLoading] = useState(false);
-  const [bulkForm, setBulkForm] = useState({ type:"Examen", trimester:1, date:new Date().toISOString().split("T")[0], note:"" });
+  const [bulkForm, setBulkForm] = useState({ type:"Examen", trimester:getCurrentTrimester(), date:new Date().toISOString().split("T")[0], note:"" });
   const [bulkScores, setBulkScores] = useState({});
 
   async function doSearch() { if (!nameQ && !gradeQ) return; setSearching(true); const r = await searchStudents({name:nameQ, grade:gradeQ}); setSearchResults(r); setSearching(false); }
