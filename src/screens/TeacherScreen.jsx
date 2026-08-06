@@ -186,20 +186,28 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
   const [bulkGrade, setBulkGrade] = useState(""); const [bulkStudents, setBulkStudents] = useState([]); const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkForm, setBulkForm] = useState({ type:"Examen", trimester:getCurrentTrimester(), date:new Date().toISOString().split("T")[0], note:"" });
   const [bulkScores, setBulkScores] = useState({});
+  // --- Confirmación ---
+  const [confirmData, setConfirmData] = useState(null); // null | { mode, ...datos }
 
   async function doSearch() { if (!nameQ && !gradeQ) return; setSearching(true); const r = await searchStudents({name:nameQ, grade:gradeQ}); setSearchResults(r); setSearching(false); }
 
-  async function submitIndividual() {
+  function requestConfirmIndividual() {
     if (!selectedStudent || !form.score) return;
     const score = parseFloat(form.score);
     if (score<1||score>10) { alert("La nota debe estar entre 1 y 10"); return; }
     const today = new Date().toISOString().split("T")[0];
     if (form.date > today) { alert(`No se puede cargar una nota con fecha futura (${form.date}). La fecha máxima es hoy (${today}).`); return; }
+    setConfirmData({ mode:"individual", student: selectedStudent, score, form });
+  }
+
+  async function confirmAndSaveIndividual() {
+    const { student, score, form: f } = confirmData;
+    setConfirmData(null);
     setSaving(true);
-    const data = { ...form, score, teacherId:user.uid, teacherName:profile.name||"", subject, studentId:selectedStudent.id, studentName:selectedStudent.name, studentGrade:selectedStudent.grade||"" };
+    const data = { ...f, score, teacherId:user.uid, teacherName:profile.name||"", subject, studentId:student.id, studentName:student.name, studentGrade:student.grade||"" };
     const id = await createGrade(data);
     setGrades(prev=>[{id,...data},...prev]);
-    setForm({ score:"", type:form.type, trimester:form.trimester, date:form.date, note:"" });
+    setForm({ score:"", type:f.type, trimester:f.trimester, date:f.date, note:"" });
     setSelectedStudent(null); setSearchResults([]); setNameQ(""); setGradeQ("");
     showToast("Nota guardada correctamente");
     setSaving(false);
@@ -216,13 +224,19 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
     setBulkLoading(false);
   }
 
-  async function submitBulk() {
+  function requestConfirmBulk() {
     const toSave = bulkStudents.filter(s => bulkScores[s.id] !== "" && !isNaN(parseFloat(bulkScores[s.id])));
     if (toSave.length === 0) { alert("Completá al menos una nota"); return; }
     const invalid = toSave.filter(s => parseFloat(bulkScores[s.id]) < 1 || parseFloat(bulkScores[s.id]) > 10);
     if (invalid.length > 0) { alert(`Nota inválida para: ${invalid.map(s=>s.name).join(", ")}. Debe ser entre 1 y 10.`); return; }
     const today = new Date().toISOString().split("T")[0];
     if (bulkForm.date > today) { alert(`No se puede cargar notas con fecha futura (${bulkForm.date}). La fecha máxima es hoy (${today}).`); return; }
+    setConfirmData({ mode:"bulk", toSave, bulkForm, grade: bulkGrade });
+  }
+
+  async function confirmAndSaveBulk() {
+    const { toSave, bulkForm: bf } = confirmData;
+    setConfirmData(null);
     const missing = bulkStudents.filter(s => !bulkScores[s.id] || isNaN(parseFloat(bulkScores[s.id])));
     if (missing.length > 0) {
       const nameList = missing.map(s => `• ${s.name}`).join("\n");
@@ -231,7 +245,7 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
     }
     setSaving(true);
     const gradesData = toSave.map(s => ({
-      ...bulkForm,
+      ...bf,
       score: parseFloat(bulkScores[s.id]),
       teacherId: user.uid, teacherName: profile.name||"",
       subject, studentId: s.id, studentName: s.name, studentGrade: s.grade||"",
@@ -371,7 +385,7 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
                 <div><label>Fecha</label><input type="date" max={new Date().toISOString().split("T")[0]} value={form.date} onChange={e=>setForm({...form,date:e.target.value})} /></div>
                 <div><label>Observación (opcional)</label><input value={form.note} onChange={e=>setForm({...form,note:e.target.value})} placeholder="Comentario para el tutor..." /></div>
               </div>
-              <button className="btn-primary" onClick={submitIndividual} style={{ marginTop:"20px", padding:"12px 32px", fontSize:"1rem" }}>Guardar evaluación →</button>
+              <button className="btn-primary" onClick={requestConfirmIndividual} style={{ marginTop:"20px", padding:"12px 32px", fontSize:"1rem" }}>Guardar evaluación →</button>
             </div>
           )}
         </div>
@@ -427,11 +441,79 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
                 ))}
                 <div style={{ marginTop:"20px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                   <span style={{ fontSize:"0.85rem", color:"#64748b" }}>{Object.values(bulkScores).filter(v=>v!=="").length} de {bulkStudents.length} notas completadas</span>
-                  <button className="btn-primary" onClick={submitBulk} style={{ padding:"12px 32px", fontSize:"1rem" }}>Guardar todas las notas →</button>
+                  <button className="btn-primary" onClick={requestConfirmBulk} style={{ padding:"12px 32px", fontSize:"1rem" }}>Guardar todas las notas →</button>
                 </div>
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* ── MODAL DE CONFIRMACIÓN ───────────────────────────────── */}
+      {confirmData && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:10000, display:"flex", alignItems:"center", justifyContent:"center", padding:"20px" }}>
+          <div className="card" style={{ width:"100%", maxWidth:"440px", padding:"28px", borderTop:"5px solid #1e3a5f" }}>
+            <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 6px" }}>Confirmá antes de guardar</h3>
+            <p style={{ color:"#64748b", fontSize:"0.85rem", margin:"0 0 20px" }}>Revisá que los datos sean correctos.</p>
+
+            {confirmData.mode === "individual" ? (
+              <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
+                {[
+                  ["Alumno",    confirmData.student.name],
+                  ["Materia",   subject],
+                  ["Tipo",      confirmData.form.type],
+                  ["Nota",      `${confirmData.score} / 10`],
+                  ["Trimestre", trimNames[confirmData.form.trimester - 1]],
+                  ["Fecha",     confirmData.form.date],
+                  ...(confirmData.form.note ? [["Observación", confirmData.form.note]] : []),
+                ].map(([label, value]) => (
+                  <div key={label} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 12px", background:"#f8fafc", borderRadius:"8px" }}>
+                    <span style={{ fontSize:"0.82rem", color:"#64748b", fontWeight:600 }}>{label}</span>
+                    <span style={{ fontSize:"0.9rem", color:"#1e293b", fontWeight:700 }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
+                {[
+                  ["Curso",     confirmData.grade],
+                  ["Materia",   subject],
+                  ["Tipo",      confirmData.bulkForm.type],
+                  ["Trimestre", trimNames[confirmData.bulkForm.trimester - 1]],
+                  ["Fecha",     confirmData.bulkForm.date],
+                  ["Alumnos",   `${confirmData.toSave.length} notas a guardar`],
+                ].map(([label, value]) => (
+                  <div key={label} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 12px", background:"#f8fafc", borderRadius:"8px" }}>
+                    <span style={{ fontSize:"0.82rem", color:"#64748b", fontWeight:600 }}>{label}</span>
+                    <span style={{ fontSize:"0.9rem", color:"#1e293b", fontWeight:700 }}>{value}</span>
+                  </div>
+                ))}
+                <div style={{ maxHeight:"160px", overflowY:"auto", background:"#f8fafc", borderRadius:"8px", padding:"8px 12px" }}>
+                  {confirmData.toSave.map(s => (
+                    <div key={s.id} style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", borderBottom:"1px solid #e2e8f0", fontSize:"0.85rem" }}>
+                      <span style={{ color:"#475569" }}>{s.name}</span>
+                      <span style={{ fontWeight:700, color:"#1e3a5f" }}>{parseFloat(bulkScores[s.id])}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display:"flex", gap:"12px", marginTop:"24px" }}>
+              <button
+                onClick={confirmData.mode==="individual" ? confirmAndSaveIndividual : confirmAndSaveBulk}
+                style={{ flex:1, padding:"12px", borderRadius:"10px", background:"#065f46", color:"white", border:"none", cursor:"pointer", fontWeight:700, fontSize:"0.95rem" }}
+              >
+                Confirmar y guardar
+              </button>
+              <button
+                onClick={() => setConfirmData(null)}
+                style={{ flex:1, padding:"12px", borderRadius:"10px", background:"#f1f5f9", color:"#475569", border:"none", cursor:"pointer", fontWeight:600, fontSize:"0.95rem" }}
+              >
+                Corregir
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
