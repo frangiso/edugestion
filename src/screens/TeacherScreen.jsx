@@ -26,6 +26,27 @@ function getCurrentTrimester() {
   return 1;
 }
 
+// Toast de éxito fijo en pantalla
+function SaveToast({ message }) {
+  if (!message) return null;
+  return (
+    <div style={{
+      position:"fixed", top:"24px", left:"50%", transform:"translateX(-50%)",
+      zIndex:9999, background:"#065f46", color:"white",
+      padding:"16px 32px", borderRadius:"16px",
+      boxShadow:"0 8px 32px rgba(0,0,0,0.25)",
+      fontSize:"1.05rem", fontWeight:700,
+      display:"flex", alignItems:"center", gap:"12px",
+      animation:"slideDown 0.3s ease",
+      whiteSpace:"nowrap",
+    }}>
+      <span style={{ fontSize:"1.4rem" }}>✅</span>
+      {message}
+    </div>
+  );
+}
+
+
 // Convierte valor actitudinal a número para promediar
 const ATTITUDE_NUM = { PD:1, DB:2, DM:3, DA:4 };
 // Convierte número a valor más cercano
@@ -43,6 +64,9 @@ export default function TeacherScreen({ user, profile, logout }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [toast, setToast] = useState("");
+
+  function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 4000); }
 
   // ── Lazy: actitudinales y observaciones se cargan solo cuando se abre la pestaña ──
   const [attitudes, setAttitudes] = useState([]);
@@ -96,7 +120,8 @@ export default function TeacherScreen({ user, profile, logout }) {
 
   return (
     <div style={{ minHeight:"100vh", background:"#f0f4f8", fontFamily:"'Source Sans 3', sans-serif" }}>
-      <style>{GLOBAL_STYLES}</style>
+      <style>{`${GLOBAL_STYLES} @keyframes slideDown { from { opacity:0; transform:translateX(-50%) translateY(-16px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }`}</style>
+      <SaveToast message={toast} />
       <TopBar profile={profile} saving={saving} logout={logout} subtitle={`Profesor · ${subjects.join(", ")}`} />
       <div style={{ maxWidth:"960px", margin:"0 auto", padding:"24px 20px" }}>
 
@@ -131,7 +156,7 @@ export default function TeacherScreen({ user, profile, logout }) {
 
         {loading ? <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando...</div> : (
           <div className="fade" key={tab}>
-            {tab==="add"          && <AddGrade user={user} subject={selectedSubject} grades={grades} setGrades={setGrades} gradeTypes={gradeTypes} setGradeTypes={setGradeTypes} setSaving={setSaving} profile={profile} />}
+            {tab==="add"          && <AddGrade user={user} subject={selectedSubject} grades={grades} setGrades={setGrades} gradeTypes={gradeTypes} setGradeTypes={setGradeTypes} setSaving={setSaving} profile={profile} showToast={showToast} />}
             {tab==="mygrades"     && <MyGrades grades={grades} setGrades={setGrades} setSaving={setSaving} hasMore={hasMore} loadMore={loadMore} />}
             {tab==="student"      && <StudentGradesTab user={user} subject={selectedSubject} setSaving={setSaving} />}
             {tab==="attitudes"    && <AttitudesTab user={user} profile={profile} subject={selectedSubject} attitudes={attitudes} setAttitudes={setAttitudes} setSaving={setSaving} loaded={attitudesLoaded} />}
@@ -151,12 +176,11 @@ export default function TeacherScreen({ user, profile, logout }) {
 // ═══════════════════════════════════════════════════════════════════
 // CARGAR NOTA (individual o masiva)
 // ═══════════════════════════════════════════════════════════════════
-function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes, setSaving, profile }) {
+function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes, setSaving, profile, showToast }) {
   const [mode, setMode] = useState("individual"); // individual | bulk
   // --- Individual ---
   const [nameQ, setNameQ] = useState(""); const [gradeQ, setGradeQ] = useState(""); const [searchResults, setSearchResults] = useState([]); const [searching, setSearching] = useState(false); const [selectedStudent, setSelectedStudent] = useState(null);
   const [form, setForm] = useState({ score:"", type:"Examen", trimester:getCurrentTrimester(), date:new Date().toISOString().split("T")[0], note:"" });
-  const [success, setSuccess] = useState(false);
   const [newType, setNewType] = useState(""); const [showNewType, setShowNewType] = useState(false);
   // --- Bulk ---
   const [bulkGrade, setBulkGrade] = useState(""); const [bulkStudents, setBulkStudents] = useState([]); const [bulkLoading, setBulkLoading] = useState(false);
@@ -177,7 +201,7 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
     setGrades(prev=>[{id,...data},...prev]);
     setForm({ score:"", type:form.type, trimester:form.trimester, date:form.date, note:"" });
     setSelectedStudent(null); setSearchResults([]); setNameQ(""); setGradeQ("");
-    setSuccess(true); setTimeout(()=>setSuccess(false), 2500);
+    showToast("Nota guardada correctamente");
     setSaving(false);
   }
 
@@ -216,7 +240,7 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
     setGrades(prev => [...newGrades, ...prev]);
     setBulkScores({});
     bulkStudents.forEach(s => { setBulkScores(prev=>({...prev,[s.id]:""})); });
-    setSuccess(true); setTimeout(()=>setSuccess(false), 2500);
+    showToast(`${toSave.length} nota${toSave.length!==1?"s":""} guardada${toSave.length!==1?"s":""} correctamente`);
     setSaving(false);
   }
 
@@ -251,8 +275,6 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
           ))}
         </div>
       </div>
-
-      {success && <div className="fade" style={{ background:"#d1fae5", border:"1px solid #6ee7b7", borderRadius:"10px", padding:"12px 16px", marginBottom:"20px", color:"#065f46", fontWeight:600 }}>✅ {mode==="bulk"?"Notas guardadas correctamente":"Nota guardada correctamente"}</div>}
 
       {/* Tipos de evaluación */}
       <div style={{ marginBottom:"20px" }}>
