@@ -46,6 +46,7 @@ function SaveToast({ message }) {
   );
 }
 
+
 // Convierte valor actitudinal a número para promediar
 const ATTITUDE_NUM = { PD:1, DB:2, DM:3, DA:4 };
 // Convierte número a valor más cercano
