@@ -256,21 +256,73 @@ export default function ParentScreen({ user, profile, logout }) {
                     ) : (
                       <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
                         {Object.entries(subjectMap).map(([subject, sGrades]) => {
-                          const sAvg = parseFloat(avg(sGrades.map(g=>g.score)));
+                          const sAvg    = parseFloat(avg(sGrades.map(g=>g.score)));
+                          const sAvgStr = avg(sGrades.map(g=>g.score));
+
+                          // Todas las notas de esta materia (todos los trimestres)
+                          const allSubjectGrades = allChildGrades.filter(g=>g.subject===subject);
+                          const overallAvgStr = avg(allSubjectGrades.map(g=>g.score));
+                          const overallAvgNum = parseFloat(overallAvgStr);
+
+                          // Promedio del trimestre anterior
+                          const prevTrimNum = trim > 1 ? trim - 1 : null;
+                          const prevGrades  = prevTrimNum ? allChildGrades.filter(g=>g.subject===subject&&g.trimester===prevTrimNum) : [];
+                          const prevAvgStr  = prevGrades.length > 0 ? avg(prevGrades.map(g=>g.score)) : null;
+
+                          // Desglose por trimestre (para vista "todos")
+                          const trimBreakdown = [1,2,3].map(t=>({
+                            label: trimNames[t-1],
+                            avgStr: avg(allSubjectGrades.filter(g=>g.trimester===t).map(g=>g.score)),
+                          }));
+
                           return (
                             <div key={subject} className="card" style={{ overflow:"hidden" }}>
-                              <div style={{ padding:"16px 20px", background:"#f8fafc", borderBottom:"1px solid #e2e8f0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                              <div style={{ padding:"16px 20px", background:"#f8fafc", borderBottom:"1px solid #e2e8f0", display:"flex", justifyContent:"space-between", alignItems:"center", gap:"12px", flexWrap:"wrap" }}>
                                 <h3 style={{ margin:0, color:"#1e3a5f", fontFamily:"'Playfair Display',serif", fontSize:"1.05rem" }}>{subject}</h3>
-                                <div style={{ display:"flex", alignItems:"center", gap:"16px" }}>
+                                <div style={{ display:"flex", alignItems:"center", gap:"14px", flexWrap:"wrap" }}>
+                                  {/* Trimestre anterior */}
+                                  {prevAvgStr && (
+                                    <>
+                                      <div style={{ textAlign:"right" }}>
+                                        <div style={{ fontWeight:700, fontSize:"1rem", color:scoreColor(parseFloat(prevAvgStr)) }}>{prevAvgStr}</div>
+                                        <div style={{ fontSize:"0.68rem", color:"#94a3b8" }}>{trimNames[prevTrimNum-1]}</div>
+                                      </div>
+                                      <span style={{ color:"#cbd5e1", fontSize:"1rem" }}>→</span>
+                                    </>
+                                  )}
+                                  {/* Promedio trimestre actual (o general) */}
                                   <div style={{ textAlign:"right" }}>
-                                    <div style={{ fontWeight:800, fontSize:"1.4rem", color:scoreColor(sAvg), fontFamily:"'Playfair Display',serif" }}>{avg(sGrades.map(g=>g.score))}</div>
-                                    <div style={{ fontSize:"0.7rem", color:"#94a3b8" }}>promedio</div>
+                                    <div style={{ fontWeight:800, fontSize:"1.4rem", color:scoreColor(sAvg), fontFamily:"'Playfair Display',serif" }}>{sAvgStr}</div>
+                                    <div style={{ fontSize:"0.7rem", color:"#94a3b8" }}>{trim===0 ? "prom. general" : trimNames[trim-1]}</div>
                                   </div>
-                                  <div style={{ width:"48px", height:"48px", borderRadius:"50%", background:`${scoreColor(sAvg)}20`, border:`3px solid ${scoreColor(sAvg)}`, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                                    <span style={{ fontSize:"1.1rem" }}>{sAvg>=8?"🟢":sAvg>=6?"🟡":"🔴"}</span>
+                                  {/* Promedio final acumulado (solo cuando se ve un trimestre específico) */}
+                                  {trim !== 0 && (
+                                    <div style={{ textAlign:"right", background:"#f0f9ff", border:"1px solid #bae6fd", borderRadius:"10px", padding:"6px 12px" }}>
+                                      <div style={{ fontWeight:700, fontSize:"1.05rem", color:scoreColor(overallAvgNum) }}>{overallAvgStr}</div>
+                                      <div style={{ fontSize:"0.68rem", color:"#0369a1" }}>prom. final</div>
+                                    </div>
+                                  )}
+                                  <div style={{ width:"44px", height:"44px", borderRadius:"50%", background:`${scoreColor(sAvg)}20`, border:`3px solid ${scoreColor(sAvg)}`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                                    <span style={{ fontSize:"1rem" }}>{sAvg>=8?"🟢":sAvg>=6?"🟡":"🔴"}</span>
                                   </div>
                                 </div>
                               </div>
+
+                              {/* Desglose por trimestre cuando se ven todas las notas */}
+                              {trim===0 && (
+                                <div style={{ display:"flex", borderBottom:"1px solid #e2e8f0" }}>
+                                  {trimBreakdown.map(({label, avgStr}) => {
+                                    const n = parseFloat(avgStr);
+                                    return (
+                                      <div key={label} style={{ flex:1, textAlign:"center", padding:"10px 8px", borderRight:"1px solid #f1f5f9" }}>
+                                        <div style={{ fontWeight:700, color:avgStr==="–"?"#cbd5e1":scoreColor(n), fontSize:"1rem" }}>{avgStr}</div>
+                                        <div style={{ fontSize:"0.68rem", color:"#94a3b8" }}>{label}</div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
                               <div>
                                 {sGrades.map(g=>(
                                   <div key={g.id} style={{ padding:"12px 20px", display:"flex", alignItems:"center", gap:"12px", borderBottom:"1px solid #f8fafc" }}>

@@ -537,51 +537,167 @@ function ParentsTab({ setSaving }) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// TODAS LAS NOTAS — lazy: recibe loaded/loading del padre
+// TODAS LAS NOTAS — vista de carpetas agrupadas por evaluación
 // ════════════════════════════════════════════════════════════════════
 function AllGradesTab({ grades, setGrades, setSaving, loaded, loading }) {
-  const [trim, setTrim] = useState(0);
-  const [studentFilter, setStudentFilter] = useState(null);
-  const filtered = grades.filter(g=>trim===0||g.trimester===trim).filter(g=>!studentFilter||g.studentId===studentFilter.id);
-  async function removeGrade(id){setSaving(true);await deleteGrade(id);setGrades(prev=>prev.filter(g=>g.id!==id));setSaving(false);}
+  const [courseFilter, setCourseFilter] = useState("");
+  const [trim, setTrim]                 = useState(0);
+  const [teacherFilter, setTeacherFilter] = useState("");
+  const [subjectFilter, setSubjectFilter] = useState("");
 
   if (loading) {
     return <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando evaluaciones...</div>;
   }
 
+  const availableCourses  = [...new Set(grades.map(g => g.studentGrade).filter(Boolean))].sort();
+  const availableSubjects = [...new Set(grades.map(g => g.subject).filter(Boolean))].sort();
+  const availableTeachers = [...new Set(grades.map(g => g.teacherName).filter(Boolean))].sort();
+  const hasFilters = courseFilter || trim !== 0 || teacherFilter || subjectFilter;
+
+  // Agrupar en carpetas: un carpeta = un profe cargó una evaluación para un curso/materia/fecha/tipo/trimestre
+  const groupMap = {};
+  grades.forEach(g => {
+    if (courseFilter  && g.studentGrade !== courseFilter)  return;
+    if (trim          && g.trimester    !== trim)          return;
+    if (teacherFilter && g.teacherName  !== teacherFilter) return;
+    if (subjectFilter && g.subject      !== subjectFilter) return;
+    const key = `${g.teacherName}|||${g.subject}|||${g.type}|||${g.studentGrade}|||${g.date}|||${g.trimester}`;
+    if (!groupMap[key]) groupMap[key] = {
+      key, teacherName: g.teacherName||"", subject: g.subject, type: g.type,
+      studentGrade: g.studentGrade||"", date: g.date, trimester: g.trimester, items: []
+    };
+    groupMap[key].items.push(g);
+  });
+
+  const folders    = Object.values(groupMap).sort((a,b) => b.date.localeCompare(a.date));
+  const totalNotes = folders.reduce((s, f) => s + f.items.length, 0);
+
+  async function removeGrade(id) {
+    setSaving(true); await deleteGrade(id); setGrades(prev => prev.filter(g => g.id !== id)); setSaving(false);
+  }
+  async function removeFolder(folder) {
+    if (!confirm(`¿Eliminar esta evaluación completa? Se borrarán ${folder.items.length} nota${folder.items.length!==1?"s":""}.`)) return;
+    setSaving(true);
+    await Promise.all(folder.items.map(g => deleteGrade(g.id)));
+    setGrades(prev => prev.filter(g => !folder.items.some(fi => fi.id === g.id)));
+    setSaving(false);
+  }
+
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" }}>
-        <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>Evaluaciones ({filtered.length})</h2>
-        <div style={{ display:"flex", gap:"6px" }}>{[["Todos",0],...trimNames.map((n,i)=>[n,i+1])].map(([l,v])=><button key={v} onClick={()=>setTrim(v)} style={{ padding:"5px 12px",borderRadius:"20px",background:trim===v?"#1e3a5f":"#f1f5f9",color:trim===v?"white":"#64748b",border:"none",cursor:"pointer",fontSize:"0.78rem",fontWeight:600 }}>{l}</button>)}</div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px", flexWrap:"wrap", gap:"10px" }}>
+        <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>
+          Evaluaciones ({folders.length} carpeta{folders.length!==1?"s":""} · {totalNotes} nota{totalNotes!==1?"s":""})
+        </h2>
       </div>
-      <div className="card" style={{ padding:"16px", marginBottom:"16px" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" }}>
-          <label style={{ margin:0 }}>Filtrar por alumno</label>
-          {studentFilter&&<button onClick={()=>setStudentFilter(null)} style={{ fontSize:"0.78rem",color:"#dc2626",background:"none",border:"none",cursor:"pointer" }}>✕ Limpiar filtro</button>}
+
+      {/* Filtros */}
+      <div className="card" style={{ padding:"16px 20px", marginBottom:"16px" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))", gap:"12px" }}>
+          <select value={courseFilter} onChange={e=>setCourseFilter(e.target.value)}>
+            <option value="">Todos los cursos</option>
+            {availableCourses.map(c=><option key={c} value={c}>{c} Año</option>)}
+          </select>
+          <select value={trim} onChange={e=>setTrim(parseInt(e.target.value))}>
+            <option value={0}>Todos los trimestres</option>
+            {trimNames.map((n,i)=><option key={i+1} value={i+1}>{n}</option>)}
+          </select>
+          <select value={subjectFilter} onChange={e=>setSubjectFilter(e.target.value)}>
+            <option value="">Todas las materias</option>
+            {availableSubjects.map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+          <select value={teacherFilter} onChange={e=>setTeacherFilter(e.target.value)}>
+            <option value="">Todos los profesores</option>
+            {availableTeachers.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
         </div>
-        {studentFilter?<span className="badge" style={{ background:"#dbeafe",color:"#1e40af" }}>{studentFilter.name} ({studentFilter.grade})</span>:<StudentSearch buttonLabel="Filtrar" onSelect={setStudentFilter} />}
+        {hasFilters && (
+          <button onClick={()=>{setCourseFilter("");setTrim(0);setTeacherFilter("");setSubjectFilter("");}} style={{ marginTop:"10px", padding:"5px 14px", borderRadius:"20px", border:"1px solid #e2e8f0", background:"#f8fafc", color:"#64748b", cursor:"pointer", fontSize:"0.8rem" }}>
+            ✕ Limpiar filtros
+          </button>
+        )}
       </div>
-      <div className="card" style={{ overflow:"auto" }}>
-        <table style={{ width:"100%", borderCollapse:"collapse", minWidth:"700px" }}>
-          <thead><tr style={{ borderBottom:"2px solid #e2e8f0" }}>
-            {["Alumno","Materia","Tipo","Nota","Trimestre","Fecha",""].map(h=><th key={h} style={{ padding:"12px 16px",textAlign:"left",fontSize:"0.75rem",color:"#94a3b8",textTransform:"uppercase" }}>{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {filtered.map(g=>(
-              <tr key={g.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
-                <td style={{ padding:"12px 16px",fontWeight:600,fontSize:"0.9rem" }}>{g.studentName||"–"}</td>
-                <td style={{ padding:"12px 16px",fontSize:"0.85rem",color:"#475569" }}>{g.subject}</td>
-                <td style={{ padding:"12px 16px" }}><span className="badge" style={{ background:"#f0f9ff",color:"#0369a1" }}>{g.type}</span></td>
-                <td style={{ padding:"12px 16px" }}><span style={{ fontWeight:800,fontSize:"1.1rem",color:scoreColor(g.score) }}>{g.score}</span><span style={{ color:"#94a3b8",fontSize:"0.75rem" }}>/10</span></td>
-                <td style={{ padding:"12px 16px",fontSize:"0.82rem",color:"#64748b" }}>{trimNames[g.trimester-1]}</td>
-                <td style={{ padding:"12px 16px",fontSize:"0.82rem",color:"#64748b" }}>{g.date}</td>
-                <td style={{ padding:"12px 16px" }}><button className="btn-danger" onClick={()=>removeGrade(g.id)}>Eliminar</button></td>
-              </tr>
+
+      {folders.length === 0 ? (
+        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"3rem" }}>📁</div>
+          <p>{hasFilters ? "Ninguna evaluación coincide con los filtros" : "No hay evaluaciones cargadas aún"}</p>
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
+          {folders.map(gr => (
+            <AdminEvalFolder key={gr.key} group={gr} removeGrade={removeGrade} removeFolder={removeFolder} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminEvalFolder({ group, removeGrade, removeFolder }) {
+  const [open, setOpen] = useState(false);
+  const groupAvg = avg(group.items.map(g => g.score));
+  const avgColor = groupAvg === "–" ? "#94a3b8" : scoreColor(parseFloat(groupAvg));
+
+  return (
+    <div className="card" style={{ overflow:"hidden", border: open ? "2px solid #1e3a5f" : "2px solid transparent" }}>
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{ padding:"16px 20px", display:"flex", alignItems:"center", gap:"14px", cursor:"pointer", background: open ? "#f0f4f8" : "white", transition:"background 0.15s" }}
+      >
+        <span style={{ fontSize:"1.6rem", flexShrink:0 }}>{open ? "📂" : "📁"}</span>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontWeight:700, color:"#1e3a5f", fontSize:"1rem" }}>
+            {group.type} — {group.studentGrade} · <span style={{ color:"#065f46" }}>{group.subject}</span>
+          </div>
+          <div style={{ fontSize:"0.8rem", color:"#64748b", marginTop:"2px" }}>
+            Prof. {group.teacherName} · {trimNames[group.trimester-1]} · {group.date} · {group.items.length} alumno{group.items.length!==1?"s":""}
+          </div>
+        </div>
+        <div style={{ textAlign:"center", flexShrink:0 }}>
+          <div style={{ fontSize:"1.4rem", fontWeight:800, color:avgColor, fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{groupAvg}</div>
+          <div style={{ fontSize:"0.68rem", color:"#94a3b8" }}>promedio</div>
+        </div>
+        <div style={{ flexShrink:0, display:"flex", gap:"8px", alignItems:"center" }}>
+          <button
+            onClick={e => { e.stopPropagation(); removeFolder(group); }}
+            style={{ padding:"5px 12px", borderRadius:"8px", background:"#fee2e2", color:"#dc2626", border:"none", cursor:"pointer", fontSize:"0.78rem", fontWeight:600 }}
+          >
+            🗑 Eliminar
+          </button>
+          <span style={{ color:"#94a3b8", fontSize:"1.1rem" }}>{open ? "▲" : "▼"}</span>
+        </div>
+      </div>
+
+      {open && (
+        <div style={{ padding:"20px 24px", borderTop:"1px solid #e2e8f0" }}>
+          <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 80px 80px", gap:"8px", padding:"0 4px" }}>
+              <span style={{ fontSize:"0.72rem", color:"#94a3b8", fontWeight:700, textTransform:"uppercase" }}>Alumno</span>
+              <span style={{ fontSize:"0.72rem", color:"#94a3b8", fontWeight:700, textTransform:"uppercase", textAlign:"center" }}>Nota</span>
+              <span></span>
+            </div>
+            {group.items.sort((a,b) => (a.studentName||"").localeCompare(b.studentName||"")).map(g => (
+              <div key={g.id} style={{ display:"grid", gridTemplateColumns:"1fr 80px 80px", gap:"8px", alignItems:"center", padding:"8px 4px", borderBottom:"1px solid #f1f5f9" }}>
+                <div>
+                  <div style={{ fontWeight:600, color:"#1e293b", fontSize:"0.9rem" }}>{g.studentName||"–"}</div>
+                  {g.note && <div style={{ fontSize:"0.75rem", color:"#7c3aed" }}>💬 {g.note}</div>}
+                </div>
+                <div style={{ textAlign:"center" }}>
+                  <span style={{ fontWeight:800, fontSize:"1.1rem", color:scoreColor(g.score) }}>{g.score}</span>
+                  <span style={{ color:"#94a3b8", fontSize:"0.72rem" }}>/10</span>
+                </div>
+                <button
+                  onClick={() => removeGrade(g.id)}
+                  style={{ padding:"5px 10px", borderRadius:"8px", background:"#fee2e2", color:"#dc2626", border:"none", cursor:"pointer", fontSize:"0.75rem", fontWeight:600 }}
+                >
+                  Eliminar
+                </button>
+              </div>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
