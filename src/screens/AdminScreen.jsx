@@ -8,7 +8,8 @@ import {
   ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS,
   getAnnouncements, createAnnouncement, deleteAnnouncement,
   recoverOrphanAccount, updateUserProfile,
-  getAllInternalObs, deleteInternalObs
+  getAllInternalObs, deleteInternalObs,
+  sendParentPasswordReset, updateParentCredentials
 } from "../db";
 
 const GRADES = ["1°","2°","3°","4°","5°","6°"];
@@ -369,6 +370,9 @@ function ParentsTab({ setSaving }) {
   const [orphanPassword, setOrphanPassword] = useState("");
   const [orphanError, setOrphanError] = useState("");
 
+  // Estado del formulario de credenciales (email/contraseña)
+  const [credForm, setCredForm] = useState(null); // null | { newEmail, newPassword, currentPassword, error, saving, resetSent }
+
   async function doSearch() { setSearching(true); const r=await searchParents(searchText); setResults(r); setSearched(true); setSearching(false); }
 
   function toggleChild(s) {
@@ -386,7 +390,10 @@ function ParentsTab({ setSaving }) {
   function startEdit(p) {
     setEditingId(p.id);
     setEditChildren((p.childIds||[]).map((id,i) => ({ id, name: (p.childrenNames||[])[i] || id })));
+    setCredForm(null);
   }
+
+  function cancelEdit() { setEditingId(null); setCredForm(null); }
 
   async function saveEdit(p) {
     setSaving(true);
@@ -394,8 +401,34 @@ function ParentsTab({ setSaving }) {
     const childrenNames = editChildren.map(c => c.name);
     await updateUserProfile(p.id, { childIds, childrenNames });
     setResults(prev => prev.map(r => r.id===p.id ? { ...r, childIds, childrenNames } : r));
-    setEditingId(null);
     setSaving(false);
+  }
+
+  async function sendReset(email) {
+    try {
+      await sendParentPasswordReset(email);
+      alert(`Email de restablecimiento enviado a ${email}. El tutor recibirá un link para crear una nueva contraseña.`);
+    } catch(e) { alert("Error al enviar el email: " + e.message); }
+  }
+
+  async function saveCredentials(p) {
+    const { newEmail, newPassword, currentPassword } = credForm;
+    if (!currentPassword) { setCredForm(f=>({...f, error:"La contraseña actual del tutor es requerida para confirmar cambios."})); return; }
+    if (!newEmail && !newPassword) { setCredForm(f=>({...f, error:"Ingresá al menos un campo a modificar (email o contraseña)."})); return; }
+    if (newPassword && newPassword.length < 6) { setCredForm(f=>({...f, error:"La nueva contraseña debe tener al menos 6 caracteres."})); return; }
+    setCredForm(f=>({...f, saving:true, error:""}));
+    try {
+      await updateParentCredentials(p.email, currentPassword, {
+        newEmail: newEmail || null,
+        newPassword: newPassword || null,
+      });
+      const updatedEmail = newEmail || p.email;
+      setResults(prev => prev.map(r => r.id===p.id ? { ...r, email: updatedEmail } : r));
+      setCredForm(null);
+      alert(`Cambios guardados correctamente.${newEmail ? ` El tutor ahora inicia sesión con ${updatedEmail}.` : ""}`);
+    } catch(e) {
+      setCredForm(f=>({...f, saving:false, error:e.message}));
+    }
   }
 
   async function addParent() {
@@ -474,10 +507,10 @@ function ParentsTab({ setSaving }) {
       <div className="card" style={{ padding:"24px", marginBottom:"16px" }}>
         <h3 style={{ margin:"0 0 12px", color:"#1e3a5f", fontSize:"1rem" }}>Buscar tutor</h3>
         <div style={{ display:"flex", gap:"10px" }}>
-          <input value={searchText} onChange={e=>setSearchText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch()} placeholder="🔍 Nombre o email..." style={{ flex:1 }} />
+          <input value={searchText} onChange={e=>setSearchText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch()} placeholder="🔍 Nombre, email o nombre de alumno..." style={{ flex:1 }} />
           <button className="btn-primary" onClick={doSearch} disabled={searching}>{searching?"Buscando...":"Buscar"}</button>
         </div>
-        {!searched&&<p style={{ color:"#94a3b8",fontSize:"0.82rem",marginTop:"10px",marginBottom:0 }}>Escribí un nombre o email y presioná Buscar.</p>}
+        {!searched&&<p style={{ color:"#94a3b8",fontSize:"0.82rem",marginTop:"10px",marginBottom:0 }}>Podés buscar por nombre o email del tutor, o por el nombre de su alumno.</p>}
       </div>
 
       {searched&&results.length===0&&<div className="card" style={{ padding:"32px",textAlign:"center",color:"#94a3b8" }}><p>No se encontraron tutores.</p></div>}
@@ -498,10 +531,10 @@ function ParentsTab({ setSaving }) {
                 </div>
                 <div style={{ display:"flex", gap:"8px", marginLeft:"16px", flexShrink:0 }}>
                   <button
-                    onClick={()=>{ if(editingId===p.id){setEditingId(null);}else{startEdit(p);} }}
+                    onClick={()=>{ if(editingId===p.id){cancelEdit();}else{startEdit(p);} }}
                     style={{ padding:"6px 14px", borderRadius:"8px", background: editingId===p.id?"#f1f5f9":"#dbeafe", color: editingId===p.id?"#64748b":"#1e40af", border:"none", cursor:"pointer", fontWeight:600, fontSize:"0.82rem" }}
                   >
-                    {editingId===p.id ? "Cancelar" : "✏ Editar hijos"}
+                    {editingId===p.id ? "Cerrar" : "✏ Editar"}
                   </button>
                   <button className="btn-danger" onClick={()=>removeParent(p.id)}>Eliminar</button>
                 </div>
@@ -509,23 +542,116 @@ function ParentsTab({ setSaving }) {
 
               {/* Panel de edición inline */}
               {editingId===p.id && (
-                <div style={{ padding:"16px 20px", borderTop:"1px solid #e2e8f0", background:"#f8fafc" }}>
-                  <div style={{ fontSize:"0.82rem", fontWeight:700, color:"#1e3a5f", marginBottom:"10px" }}>
-                    Hijos vinculados ({editChildren.length})
-                  </div>
-                  {editChildren.length > 0 && (
-                    <div style={{ display:"flex", flexWrap:"wrap", gap:"6px", marginBottom:"12px" }}>
-                      {editChildren.map(c => (
-                        <span key={c.id} className="badge" style={{ background:"#fff7ed", color:"#7c2d12", cursor:"pointer", padding:"5px 12px" }} onClick={()=>toggleEditChild(c)}>
-                          {c.name} ✕
-                        </span>
-                      ))}
+                <div style={{ padding:"20px 24px", borderTop:"1px solid #e2e8f0", background:"#f8fafc" }}>
+
+                  {/* ── Sección 1: Hijos vinculados ── */}
+                  <div style={{ marginBottom:"20px" }}>
+                    <div style={{ fontSize:"0.82rem", fontWeight:700, color:"#1e3a5f", marginBottom:"10px" }}>
+                      👨‍👩‍👧 Hijos vinculados ({editChildren.length})
                     </div>
-                  )}
-                  <div style={{ marginBottom:"14px" }}>
-                    <StudentSearch buttonLabel="+ Agregar hijo" onSelect={s => { if(!editChildren.find(c=>c.id===s.id)) setEditChildren(prev=>[...prev,s]); }} />
+                    {editChildren.length > 0 && (
+                      <div style={{ display:"flex", flexWrap:"wrap", gap:"6px", marginBottom:"12px" }}>
+                        {editChildren.map(c => (
+                          <span key={c.id} className="badge" style={{ background:"#fff7ed", color:"#7c2d12", cursor:"pointer", padding:"5px 12px" }} onClick={()=>toggleEditChild(c)}>
+                            {c.name} ✕
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ marginBottom:"12px" }}>
+                      <StudentSearch buttonLabel="+ Agregar hijo" onSelect={s => { if(!editChildren.find(c=>c.id===s.id)) setEditChildren(prev=>[...prev,s]); }} />
+                    </div>
+                    <button className="btn-primary" onClick={()=>saveEdit(p)} style={{ padding:"8px 20px" }}>Guardar hijos</button>
                   </div>
-                  <button className="btn-primary" onClick={()=>saveEdit(p)}>Guardar cambios</button>
+
+                  {/* ── Sección 2: Email y contraseña ── */}
+                  <div style={{ paddingTop:"20px", borderTop:"1px solid #e2e8f0" }}>
+                    <div style={{ fontSize:"0.82rem", fontWeight:700, color:"#1e3a5f", marginBottom:"12px" }}>
+                      🔐 Email y contraseña
+                    </div>
+
+                    {/* Restablecer contraseña por email */}
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 16px", background:"white", borderRadius:"10px", border:"1px solid #e2e8f0", marginBottom:"12px", flexWrap:"wrap", gap:"10px" }}>
+                      <div>
+                        <div style={{ fontSize:"0.83rem", fontWeight:600, color:"#475569" }}>Restablecer contraseña</div>
+                        <div style={{ fontSize:"0.75rem", color:"#94a3b8", marginTop:"2px" }}>Envía un link al tutor para que cree una nueva contraseña (no requiere saber la actual)</div>
+                      </div>
+                      <button
+                        onClick={()=>sendReset(p.email)}
+                        style={{ padding:"7px 16px", borderRadius:"8px", background:"#f0f9ff", color:"#0369a1", border:"1px solid #bae6fd", cursor:"pointer", fontWeight:600, fontSize:"0.82rem", whiteSpace:"nowrap" }}
+                      >
+                        📧 Enviar email de restablecimiento
+                      </button>
+                    </div>
+
+                    {/* Cambiar email / contraseña directamente */}
+                    {!credForm ? (
+                      <button
+                        onClick={()=>setCredForm({ newEmail:"", newPassword:"", currentPassword:"", error:"", saving:false })}
+                        style={{ padding:"7px 16px", borderRadius:"8px", background:"white", color:"#475569", border:"1px solid #e2e8f0", cursor:"pointer", fontWeight:600, fontSize:"0.82rem" }}
+                      >
+                        ✏ Cambiar email o contraseña directamente
+                      </button>
+                    ) : (
+                      <div style={{ background:"white", borderRadius:"12px", border:"2px solid #fed7aa", padding:"16px" }}>
+                        <div style={{ fontSize:"0.78rem", color:"#92400e", marginBottom:"12px", padding:"8px 12px", background:"#fff7ed", borderRadius:"8px" }}>
+                          ⚠ Se necesita la contraseña actual del tutor. Dejá vacíos los campos que no querés cambiar.
+                        </div>
+                        <div style={{ display:"grid", gap:"10px", marginBottom:"12px" }}>
+                          <div>
+                            <label style={{ fontSize:"0.8rem" }}>Nuevo email <span style={{ color:"#94a3b8", fontWeight:400 }}>(opcional)</span></label>
+                            <input
+                              value={credForm.newEmail}
+                              onChange={e=>setCredForm(f=>({...f,newEmail:e.target.value,error:""}))}
+                              placeholder="Dejar vacío para no cambiar"
+                              style={{ marginTop:"4px" }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize:"0.8rem" }}>Nueva contraseña <span style={{ color:"#94a3b8", fontWeight:400 }}>(opcional, mín. 6 caracteres)</span></label>
+                            <input
+                              type="password"
+                              value={credForm.newPassword}
+                              onChange={e=>setCredForm(f=>({...f,newPassword:e.target.value,error:""}))}
+                              placeholder="Dejar vacío para no cambiar"
+                              style={{ marginTop:"4px" }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize:"0.8rem" }}>Contraseña actual del tutor <span style={{ color:"#dc2626" }}>*</span></label>
+                            <input
+                              type="password"
+                              value={credForm.currentPassword}
+                              onChange={e=>setCredForm(f=>({...f,currentPassword:e.target.value,error:""}))}
+                              placeholder="Requerida para confirmar los cambios"
+                              style={{ marginTop:"4px" }}
+                            />
+                          </div>
+                        </div>
+                        {credForm.error && (
+                          <div style={{ color:"#dc2626", fontSize:"0.83rem", marginBottom:"10px", padding:"8px 12px", background:"#fef2f2", borderRadius:"8px" }}>
+                            {credForm.error}
+                          </div>
+                        )}
+                        <div style={{ display:"flex", gap:"8px" }}>
+                          <button
+                            className="btn-primary"
+                            onClick={()=>saveCredentials(p)}
+                            disabled={credForm.saving}
+                            style={{ padding:"8px 20px" }}
+                          >
+                            {credForm.saving ? "Guardando..." : "Guardar cambios"}
+                          </button>
+                          <button
+                            onClick={()=>setCredForm(null)}
+                            style={{ padding:"8px 16px", borderRadius:"10px", border:"1px solid #e2e8f0", background:"white", color:"#64748b", cursor:"pointer", fontWeight:600, fontSize:"0.85rem" }}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

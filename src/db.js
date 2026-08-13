@@ -3,7 +3,7 @@ import {
   updateDoc, deleteDoc, query, where, orderBy, serverTimestamp,
   limit, startAfter, writeBatch
 } from "firebase/firestore";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, getAuth } from "firebase/auth";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, getAuth, updatePassword, updateEmail, sendPasswordResetEmail } from "firebase/auth";
 import { initializeApp, deleteApp } from "firebase/app";
 import { db, auth } from "./firebase";
 
@@ -103,7 +103,11 @@ export async function searchParents(searchText = "") {
   let results = cache.parents;
   if (searchText) {
     const q = searchText.toLowerCase();
-    results = results.filter(p => p.name?.toLowerCase().includes(q) || p.email?.toLowerCase().includes(q));
+    results = results.filter(p =>
+      p.name?.toLowerCase().includes(q) ||
+      p.email?.toLowerCase().includes(q) ||
+      (p.childrenNames||[]).some(n => n.toLowerCase().includes(q))
+    );
   }
   return results;
 }
@@ -162,6 +166,41 @@ export async function recoverOrphanAccount(email, currentPassword, profileData) 
   } catch(e) {
     if (e.code === "auth/wrong-password" || e.code === "auth/invalid-credential" || e.code === "auth/invalid-login-credentials") {
       throw new Error("Contraseña incorrecta. Intentá con la contraseña original del tutor, o pedile que use 'Olvidé mi contraseña' en la pantalla de inicio y luego volvé a intentar.");
+    }
+    throw e;
+  } finally {
+    await deleteApp(secondaryApp);
+  }
+}
+
+// Envía un email de restablecimiento de contraseña al tutor (no requiere contraseña actual).
+export async function sendParentPasswordReset(email) {
+  await sendPasswordResetEmail(auth, email.trim().toLowerCase());
+}
+
+// Cambia email y/o contraseña de un tutor autenticándose con la contraseña actual
+// (misma estrategia que recoverOrphanAccount: app secundaria sin cerrar la sesión del admin).
+export async function updateParentCredentials(email, currentPassword, { newEmail, newPassword }) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const secondaryApp = initializeApp(firebaseConfig, `creds_${Date.now()}`);
+  const secondaryAuth = getAuth(secondaryApp);
+  try {
+    const cred = await signInWithEmailAndPassword(secondaryAuth, normalizedEmail, currentPassword);
+    if (newEmail) {
+      const normalizedNew = newEmail.trim().toLowerCase();
+      await updateEmail(cred.user, normalizedNew);
+      await updateDoc(doc(db, "users", cred.user.uid), { email: normalizedNew });
+      if (cache.parents) cache.parents = cache.parents.map(p => p.id === cred.user.uid ? { ...p, email: normalizedNew } : p);
+    }
+    if (newPassword) {
+      await updatePassword(cred.user, newPassword);
+    }
+  } catch(e) {
+    if (e.code === "auth/wrong-password" || e.code === "auth/invalid-credential" || e.code === "auth/invalid-login-credentials") {
+      throw new Error("Contraseña incorrecta. Verificá la contraseña actual del tutor.");
+    }
+    if (e.code === "auth/email-already-in-use") {
+      throw new Error("Ese email ya está registrado por otro usuario.");
     }
     throw e;
   } finally {
