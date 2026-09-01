@@ -180,6 +180,35 @@ export async function sendParentPasswordReset(email) {
 
 // Cambia email y/o contraseña de un tutor autenticándose con la contraseña actual
 // (misma estrategia que recoverOrphanAccount: app secundaria sin cerrar la sesión del admin).
+// Cambia email y/o contraseña de un profesor (misma estrategia que updateParentCredentials).
+export async function updateTeacherCredentials(email, currentPassword, { newEmail, newPassword }) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const secondaryApp = initializeApp(firebaseConfig, `tcreds_${Date.now()}`);
+  const secondaryAuth = getAuth(secondaryApp);
+  try {
+    const cred = await signInWithEmailAndPassword(secondaryAuth, normalizedEmail, currentPassword);
+    if (newEmail) {
+      const normalizedNew = newEmail.trim().toLowerCase();
+      await updateEmail(cred.user, normalizedNew);
+      await updateDoc(doc(db, "users", cred.user.uid), { email: normalizedNew });
+      if (cache.teachers) cache.teachers = cache.teachers.map(t => t.id === cred.user.uid ? { ...t, email: normalizedNew } : t);
+    }
+    if (newPassword) {
+      await updatePassword(cred.user, newPassword);
+    }
+  } catch(e) {
+    if (e.code === "auth/wrong-password" || e.code === "auth/invalid-credential" || e.code === "auth/invalid-login-credentials") {
+      throw new Error("Contraseña incorrecta. Verificá la contraseña actual del profesor.");
+    }
+    if (e.code === "auth/email-already-in-use") {
+      throw new Error("Ese email ya está registrado por otro usuario.");
+    }
+    throw e;
+  } finally {
+    await deleteApp(secondaryApp);
+  }
+}
+
 export async function updateParentCredentials(email, currentPassword, { newEmail, newPassword }) {
   const normalizedEmail = email.trim().toLowerCase();
   const secondaryApp = initializeApp(firebaseConfig, `creds_${Date.now()}`);

@@ -9,7 +9,7 @@ import {
   getAnnouncements, createAnnouncement, deleteAnnouncement,
   recoverOrphanAccount, updateUserProfile,
   getAllInternalObs, deleteInternalObs,
-  sendParentPasswordReset, updateParentCredentials
+  sendParentPasswordReset, updateParentCredentials, updateTeacherCredentials
 } from "../db";
 
 const GRADES = ["1°","2°","3°","4°","5°","6°"];
@@ -297,7 +297,12 @@ function StudentsTab({ setSaving }) {
 function TeachersTab({ teachers, setTeachers, setSaving }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name:"", email:"", password:"", subjects:[] });
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [credForm, setCredForm] = useState(null);
+
   function toggleSubject(s) { setForm(f=>({...f, subjects:f.subjects.includes(s)?f.subjects.filter(x=>x!==s):[...f.subjects,s]})); }
+
   async function addTeacher() {
     if (!form.name||!form.email||!form.password||form.subjects.length===0){alert("Completá todos los campos y seleccioná al menos una materia");return;}
     setSaving(true);
@@ -308,10 +313,52 @@ function TeachersTab({ teachers, setTeachers, setSaving }) {
     } catch(e){alert(e.message);}
     setSaving(false);
   }
+
   async function removeTeacher(id) {
     if(!confirm("¿Eliminar este profesor?"))return;
     setSaving(true); await deleteUserProfile(id); setTeachers(prev=>prev.filter(t=>t.id!==id)); setSaving(false);
   }
+
+  function startEdit(t) {
+    setEditingId(t.id);
+    setEditName(t.name);
+    setCredForm({ newEmail:"", newPassword:"", currentPassword:"", error:"", saving:false, resetSent:false });
+  }
+
+  function cancelEdit() { setEditingId(null); setCredForm(null); }
+
+  async function saveName(t) {
+    if (!editName.trim()) return;
+    setSaving(true);
+    try {
+      await updateUserProfile(t.id, { name: editName.trim() });
+      setTeachers(prev=>prev.map(x=>x.id===t.id?{...x,name:editName.trim()}:x));
+    } catch(e) { alert(e.message); }
+    setSaving(false);
+  }
+
+  async function sendReset(email) {
+    try {
+      await sendParentPasswordReset(email);
+      setCredForm(f=>({...f, resetSent:true, error:""}));
+    } catch(e) { setCredForm(f=>({...f, error:e.message})); }
+  }
+
+  async function saveCredentials(t) {
+    const { newEmail, newPassword, currentPassword } = credForm;
+    if (!currentPassword) { setCredForm(f=>({...f, error:"Ingresá la contraseña actual del profesor."})); return; }
+    if (!newEmail && !newPassword) { setCredForm(f=>({...f, error:"Ingresá un nuevo email o nueva contraseña."})); return; }
+    setCredForm(f=>({...f, saving:true, error:""}));
+    try {
+      await updateTeacherCredentials(t.email, currentPassword, { newEmail: newEmail||"", newPassword: newPassword||"" });
+      if (newEmail) setTeachers(prev=>prev.map(x=>x.id===t.id?{...x,email:newEmail.trim().toLowerCase()}:x));
+      setCredForm(f=>({...f, saving:false, newEmail:"", newPassword:"", currentPassword:"", error:"", resetSent:false}));
+      alert("Credenciales actualizadas.");
+    } catch(e) {
+      setCredForm(f=>({...f, saving:false, error:e.message}));
+    }
+  }
+
   return (
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px" }}>
@@ -332,25 +379,56 @@ function TeachersTab({ teachers, setTeachers, setSaving }) {
           <button className="btn-primary" onClick={addTeacher}>Guardar profesor</button>
         </div>
       )}
-      <div className="card">
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
-          <thead><tr style={{ borderBottom:"2px solid #e2e8f0" }}>
-            {["Profesor","Email","Materias","Acciones"].map(h=><th key={h} style={{ padding:"12px 16px", textAlign:"left", fontSize:"0.75rem", color:"#94a3b8", textTransform:"uppercase" }}>{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {teachers.map(t=>{
-              const materias = t.subjects||(t.subject?[t.subject]:[]);
-              return (
-                <tr key={t.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
-                  <td style={{ padding:"12px 16px", fontWeight:600 }}>{t.name}</td>
-                  <td style={{ padding:"12px 16px", color:"#64748b", fontSize:"0.85rem" }}>{t.email}</td>
-                  <td style={{ padding:"12px 16px" }}>{materias.map(m=><span key={m} className="badge" style={{ background:"#d1fae5", color:"#065f46", marginRight:"4px", marginBottom:"4px" }}>{m}</span>)}</td>
-                  <td style={{ padding:"12px 16px" }}><button className="btn-danger" onClick={()=>removeTeacher(t.id)}>Eliminar</button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
+        {teachers.map(t=>{
+          const materias = t.subjects||(t.subject?[t.subject]:[]);
+          const isEditing = editingId === t.id;
+          return (
+            <div key={t.id} className="card" style={{ padding:"20px", border:isEditing?"2px solid #bfdbfe":"1px solid #e2e8f0" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                <div>
+                  <div style={{ fontWeight:700, fontSize:"1rem", color:"#1e3a5f" }}>{t.name}</div>
+                  <div style={{ color:"#64748b", fontSize:"0.85rem", marginTop:"2px" }}>{t.email}</div>
+                  <div style={{ marginTop:"8px", display:"flex", flexWrap:"wrap", gap:"4px" }}>
+                    {materias.map(m=><span key={m} className="badge" style={{ background:"#d1fae5", color:"#065f46" }}>{m}</span>)}
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:"8px", flexShrink:0 }}>
+                  <button className="btn-secondary" style={{ fontSize:"0.8rem" }} onClick={()=>isEditing?cancelEdit():startEdit(t)}>
+                    {isEditing?"✕ Cerrar":"✏ Editar"}
+                  </button>
+                  <button className="btn-danger" style={{ fontSize:"0.8rem" }} onClick={()=>removeTeacher(t.id)}>Eliminar</button>
+                </div>
+              </div>
+
+              {isEditing && credForm && (
+                <div style={{ marginTop:"20px", borderTop:"1px solid #e2e8f0", paddingTop:"20px", display:"flex", flexDirection:"column", gap:"20px" }}>
+                  <div>
+                    <div style={{ fontWeight:600, color:"#475569", marginBottom:"10px", fontSize:"0.8rem", textTransform:"uppercase", letterSpacing:"0.05em" }}>Nombre</div>
+                    <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
+                      <input value={editName} onChange={e=>setEditName(e.target.value)} style={{ flex:1, maxWidth:"320px" }} placeholder="Nombre del profesor" />
+                      <button className="btn-primary" style={{ whiteSpace:"nowrap" }} onClick={()=>saveName(t)}>Guardar nombre</button>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontWeight:600, color:"#475569", marginBottom:"10px", fontSize:"0.8rem", textTransform:"uppercase", letterSpacing:"0.05em" }}>Email y contraseña</div>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"12px", marginBottom:"12px" }}>
+                      <div><label style={{ fontSize:"0.8rem" }}>Contraseña actual del profesor</label><input type="password" value={credForm.currentPassword} onChange={e=>setCredForm(f=>({...f,currentPassword:e.target.value}))} placeholder="Contraseña actual" /></div>
+                      <div><label style={{ fontSize:"0.8rem" }}>Nuevo email (opcional)</label><input value={credForm.newEmail} onChange={e=>setCredForm(f=>({...f,newEmail:e.target.value}))} placeholder="Nuevo email" /></div>
+                      <div><label style={{ fontSize:"0.8rem" }}>Nueva contraseña (opcional)</label><input type="password" value={credForm.newPassword} onChange={e=>setCredForm(f=>({...f,newPassword:e.target.value}))} placeholder="Nueva contraseña" /></div>
+                    </div>
+                    {credForm.error && <div style={{ color:"#dc2626", fontSize:"0.85rem", marginBottom:"10px" }}>{credForm.error}</div>}
+                    {credForm.resetSent && <div style={{ color:"#059669", fontSize:"0.85rem", marginBottom:"10px" }}>Se envió un email de restablecimiento al profesor.</div>}
+                    <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
+                      <button className="btn-primary" onClick={()=>saveCredentials(t)} disabled={credForm.saving}>{credForm.saving?"Guardando...":"Actualizar acceso"}</button>
+                      <button className="btn-secondary" onClick={()=>sendReset(t.email)}>Enviar reset por email</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
