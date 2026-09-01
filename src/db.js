@@ -190,8 +190,7 @@ export async function updateTeacherCredentials(email, currentPassword, { newEmai
     const cred = await signInWithEmailAndPassword(secondaryAuth, normalizedEmail, currentPassword);
     if (newEmail) {
       const normalizedNew = newEmail.trim().toLowerCase();
-      // verifyBeforeUpdateEmail envía un link al nuevo email; el cambio en Auth se aplica al hacer click.
-      // Actualizamos Firestore de inmediato para que el panel refleje el nuevo email.
+      secondaryAuth.languageCode = "es";
       await verifyBeforeUpdateEmail(cred.user, normalizedNew);
       await updateDoc(doc(db, "users", cred.user.uid), { email: normalizedNew });
       if (cache.teachers) cache.teachers = cache.teachers.map(t => t.id === cred.user.uid ? { ...t, email: normalizedNew } : t);
@@ -223,6 +222,7 @@ export async function updateParentCredentials(email, currentPassword, { newEmail
     const cred = await signInWithEmailAndPassword(secondaryAuth, normalizedEmail, currentPassword);
     if (newEmail) {
       const normalizedNew = newEmail.trim().toLowerCase();
+      secondaryAuth.languageCode = "es";
       await verifyBeforeUpdateEmail(cred.user, normalizedNew);
       await updateDoc(doc(db, "users", cred.user.uid), { email: normalizedNew });
       if (cache.parents) cache.parents = cache.parents.map(p => p.id === cred.user.uid ? { ...p, email: normalizedNew } : p);
