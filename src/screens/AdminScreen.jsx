@@ -350,10 +350,14 @@ function TeachersTab({ teachers, setTeachers, setSaving }) {
     if (!newEmail && !newPassword) { setCredForm(f=>({...f, error:"Ingresá un nuevo email o nueva contraseña."})); return; }
     setCredForm(f=>({...f, saving:true, error:""}));
     try {
-      await updateTeacherCredentials(t.email, currentPassword, { newEmail: newEmail||"", newPassword: newPassword||"" });
+      const result = await updateTeacherCredentials(t.email, currentPassword, { newEmail: newEmail||"", newPassword: newPassword||"" });
       if (newEmail) setTeachers(prev=>prev.map(x=>x.id===t.id?{...x,email:newEmail.trim().toLowerCase()}:x));
       setCredForm(f=>({...f, saving:false, newEmail:"", newPassword:"", currentPassword:"", error:"", resetSent:false}));
-      alert("Credenciales actualizadas.");
+      if (result?.emailVerificationSent) {
+        alert(`Se envió un email de verificación a ${newEmail.trim()}. El nuevo email quedará activo en Firebase cuando el profesor haga click en el enlace. La contraseña ya se actualizó.`);
+      } else {
+        alert("Contraseña actualizada.");
+      }
     } catch(e) {
       setCredForm(f=>({...f, saving:false, error:e.message}));
     }
@@ -496,14 +500,18 @@ function ParentsTab({ setSaving }) {
     if (newPassword && newPassword.length < 6) { setCredForm(f=>({...f, error:"La nueva contraseña debe tener al menos 6 caracteres."})); return; }
     setCredForm(f=>({...f, saving:true, error:""}));
     try {
-      await updateParentCredentials(p.email, currentPassword, {
+      const result = await updateParentCredentials(p.email, currentPassword, {
         newEmail: newEmail || null,
         newPassword: newPassword || null,
       });
       const updatedEmail = newEmail || p.email;
       setResults(prev => prev.map(r => r.id===p.id ? { ...r, email: updatedEmail } : r));
       setCredForm(null);
-      alert(`Cambios guardados correctamente.${newEmail ? ` El tutor ahora inicia sesión con ${updatedEmail}.` : ""}`);
+      if (result?.emailVerificationSent) {
+        alert(`Se envió un email de verificación a ${newEmail.trim()}. El nuevo email quedará activo cuando el tutor haga click en el enlace. La contraseña ya se actualizó.`);
+      } else {
+        alert("Contraseña actualizada correctamente.");
+      }
     } catch(e) {
       setCredForm(f=>({...f, saving:false, error:e.message}));
     }

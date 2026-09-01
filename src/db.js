@@ -3,7 +3,7 @@ import {
   updateDoc, deleteDoc, query, where, orderBy, serverTimestamp,
   limit, startAfter, writeBatch
 } from "firebase/firestore";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, getAuth, updatePassword, updateEmail, sendPasswordResetEmail } from "firebase/auth";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, getAuth, updatePassword, updateEmail, verifyBeforeUpdateEmail, sendPasswordResetEmail } from "firebase/auth";
 import { initializeApp, deleteApp } from "firebase/app";
 import { db, auth } from "./firebase";
 
@@ -185,13 +185,16 @@ export async function updateTeacherCredentials(email, currentPassword, { newEmai
   const normalizedEmail = email.trim().toLowerCase();
   const secondaryApp = initializeApp(firebaseConfig, `tcreds_${Date.now()}`);
   const secondaryAuth = getAuth(secondaryApp);
+  let emailVerificationSent = false;
   try {
     const cred = await signInWithEmailAndPassword(secondaryAuth, normalizedEmail, currentPassword);
     if (newEmail) {
       const normalizedNew = newEmail.trim().toLowerCase();
-      await updateEmail(cred.user, normalizedNew);
+      secondaryAuth.languageCode = "es";
+      await verifyBeforeUpdateEmail(cred.user, normalizedNew);
       await updateDoc(doc(db, "users", cred.user.uid), { email: normalizedNew });
       if (cache.teachers) cache.teachers = cache.teachers.map(t => t.id === cred.user.uid ? { ...t, email: normalizedNew } : t);
+      emailVerificationSent = true;
     }
     if (newPassword) {
       await updatePassword(cred.user, newPassword);
@@ -207,19 +210,23 @@ export async function updateTeacherCredentials(email, currentPassword, { newEmai
   } finally {
     await deleteApp(secondaryApp);
   }
+  return { emailVerificationSent };
 }
 
 export async function updateParentCredentials(email, currentPassword, { newEmail, newPassword }) {
   const normalizedEmail = email.trim().toLowerCase();
   const secondaryApp = initializeApp(firebaseConfig, `creds_${Date.now()}`);
   const secondaryAuth = getAuth(secondaryApp);
+  let emailVerificationSent = false;
   try {
     const cred = await signInWithEmailAndPassword(secondaryAuth, normalizedEmail, currentPassword);
     if (newEmail) {
       const normalizedNew = newEmail.trim().toLowerCase();
-      await updateEmail(cred.user, normalizedNew);
+      secondaryAuth.languageCode = "es";
+      await verifyBeforeUpdateEmail(cred.user, normalizedNew);
       await updateDoc(doc(db, "users", cred.user.uid), { email: normalizedNew });
       if (cache.parents) cache.parents = cache.parents.map(p => p.id === cred.user.uid ? { ...p, email: normalizedNew } : p);
+      emailVerificationSent = true;
     }
     if (newPassword) {
       await updatePassword(cred.user, newPassword);
@@ -235,6 +242,7 @@ export async function updateParentCredentials(email, currentPassword, { newEmail
   } finally {
     await deleteApp(secondaryApp);
   }
+  return { emailVerificationSent };
 }
 
 export async function deleteUserProfile(uid) {
