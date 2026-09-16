@@ -856,10 +856,13 @@ function AllGradesTab({ grades, setGrades, setSaving, loaded, loading }) {
 
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px", flexWrap:"wrap", gap:"10px" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"12px", flexWrap:"wrap", gap:"10px" }}>
         <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>
           Evaluaciones ({folders.length} carpeta{folders.length!==1?"s":""} · {totalNotes} nota{totalNotes!==1?"s":""})
         </h2>
+      </div>
+      <div style={{ background:"#fffbeb", border:"1px solid #fde68a", borderRadius:"10px", padding:"10px 16px", marginBottom:"16px", fontSize:"0.85rem", color:"#92400e", fontWeight:600 }}>
+        ⚠️ Nota mínima institucional: <strong>3</strong>. El sistema no permite registrar notas menores a 3.
       </div>
 
       {/* Filtros */}

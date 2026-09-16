@@ -194,7 +194,7 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
   function requestConfirmIndividual() {
     if (!selectedStudent || !form.score) return;
     const score = parseFloat(form.score);
-    if (score<1||score>10) { alert("La nota debe estar entre 1 y 10"); return; }
+    if (score<3||score>10) { alert("La nota debe estar entre 3 y 10. La nota mínima es 3."); return; }
     const today = new Date().toISOString().split("T")[0];
     if (form.date > today) { alert(`No se puede cargar una nota con fecha futura (${form.date}). La fecha máxima es hoy (${today}).`); return; }
     setConfirmData({ mode:"individual", student: selectedStudent, score, form });
@@ -227,8 +227,8 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
   function requestConfirmBulk() {
     const toSave = bulkStudents.filter(s => bulkScores[s.id] !== "" && !isNaN(parseFloat(bulkScores[s.id])));
     if (toSave.length === 0) { alert("Completá al menos una nota"); return; }
-    const invalid = toSave.filter(s => parseFloat(bulkScores[s.id]) < 1 || parseFloat(bulkScores[s.id]) > 10);
-    if (invalid.length > 0) { alert(`Nota inválida para: ${invalid.map(s=>s.name).join(", ")}. Debe ser entre 1 y 10.`); return; }
+    const invalid = toSave.filter(s => parseFloat(bulkScores[s.id]) < 3 || parseFloat(bulkScores[s.id]) > 10);
+    if (invalid.length > 0) { alert(`Nota inválida para: ${invalid.map(s=>s.name).join(", ")}. La nota debe ser entre 3 y 10 (mínimo 3).`); return; }
     const today = new Date().toISOString().split("T")[0];
     if (bulkForm.date > today) { alert(`No se puede cargar notas con fecha futura (${bulkForm.date}). La fecha máxima es hoy (${today}).`); return; }
     setConfirmData({ mode:"bulk", toSave, bulkForm, grade: bulkGrade });
@@ -374,8 +374,11 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
                 </div>
               )}
 
+              <div style={{ background:"#fffbeb", border:"1px solid #fde68a", borderRadius:"10px", padding:"10px 14px", marginBottom:"4px", fontSize:"0.85rem", color:"#92400e", fontWeight:600 }}>
+                ⚠️ Nota mínima: <strong>3</strong> — el sistema no acepta notas menores a 3.
+              </div>
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"20px" }}>
-                <div><label>Nota (1–10)</label><input type="number" min="1" max="10" step="0.5" value={form.score} onChange={e=>setForm({...form,score:e.target.value})} placeholder="Ej: 8" /></div>
+                <div><label>Nota (3–10)</label><input type="number" min="3" max="10" step="0.5" value={form.score} onChange={e=>setForm({...form,score:e.target.value})} placeholder="Ej: 8" /></div>
                 <div>
                   <label>Trimestre</label>
                   <select value={form.trimester} onChange={e=>setForm({...form,trimester:parseInt(e.target.value)})}>
@@ -423,15 +426,18 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
 
               <div className="card" style={{ padding:"24px" }}>
                 <h3 style={{ margin:"0 0 16px", color:"#1e3a5f", fontSize:"1rem" }}>3. Ingresar notas — {bulkGrade} ({bulkStudents.length} alumnos)</h3>
+                <div style={{ background:"#fffbeb", border:"1px solid #fde68a", borderRadius:"10px", padding:"10px 14px", marginBottom:"12px", fontSize:"0.85rem", color:"#92400e", fontWeight:600 }}>
+                  ⚠️ Nota mínima: <strong>3</strong> — el sistema no acepta notas menores a 3.
+                </div>
                 <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:"8px", alignItems:"center", marginBottom:"8px" }}>
                   <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:700, textTransform:"uppercase" }}>Alumno</span>
-                  <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:700, textTransform:"uppercase", width:"100px", textAlign:"center" }}>Nota (1–10)</span>
+                  <span style={{ fontSize:"0.75rem", color:"#94a3b8", fontWeight:700, textTransform:"uppercase", width:"100px", textAlign:"center" }}>Nota (3–10)</span>
                 </div>
                 {bulkStudents.map(s => (
                   <div key={s.id} style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:"8px", alignItems:"center", padding:"8px 0", borderBottom:"1px solid #f1f5f9" }}>
                     <div style={{ fontWeight:600, color:"#1e293b" }}>{s.name}</div>
                     <input
-                      type="number" min="1" max="10" step="0.5"
+                      type="number" min="3" max="10" step="0.5"
                       value={bulkScores[s.id]||""}
                       onChange={e=>setBulkScores(prev=>({...prev,[s.id]:e.target.value}))}
                       placeholder="–"
