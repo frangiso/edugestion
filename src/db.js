@@ -260,13 +260,21 @@ export async function deleteUserProfile(uid) {
 export async function searchStudents({ name = "", grade = "" } = {}) {
   if (grade && !name) return await getStudentsByGrade(grade);
   const all = await ensureStudentsLoaded();
-  let results = all;
+  let results = all.filter(s => s.active !== false);
   if (name) results = results.filter(s => s.name.toLowerCase().includes(name.toLowerCase()));
   if (grade) results = results.filter(s => s.grade === grade);
   return results;
 }
 
-export async function getAllStudents() { return await ensureStudentsLoaded(); }
+export async function getAllStudents() {
+  const all = await ensureStudentsLoaded();
+  return all.filter(s => s.active !== false);
+}
+
+export async function getInactiveStudents() {
+  const all = await ensureStudentsLoaded();
+  return all.filter(s => s.active === false);
+}
 
 export async function getStudentsByGrade(grade) {
   const snap = await getDocs(query(collection(db, "students"), where("grade", "==", grade), orderBy("name")));
@@ -279,7 +287,7 @@ export async function getStudentsByGrade(grade) {
     });
     cache.allStudents.sort((a,b) => a.name.localeCompare(b.name));
   }
-  return results;
+  return results.filter(s => s.active !== false);
 }
 
 export async function getChildrenByIds(childIds = [], tutorEmail = "") {
@@ -311,6 +319,16 @@ export async function updateStudent(id, data) {
     cache.allStudents = cache.allStudents.map(s => s.id === id ? { ...s, ...data } : s);
     if (data.name) cache.studentNames[id] = data.name;
   }
+}
+
+export async function deactivateStudent(id) {
+  await updateDoc(doc(db, "students", id), { active: false, deactivatedAt: serverTimestamp() });
+  if (cache.allStudents) cache.allStudents = cache.allStudents.map(s => s.id === id ? { ...s, active: false } : s);
+}
+
+export async function reactivateStudent(id) {
+  await updateDoc(doc(db, "students", id), { active: true, deactivatedAt: null });
+  if (cache.allStudents) cache.allStudents = cache.allStudents.map(s => s.id === id ? { ...s, active: true, deactivatedAt: null } : s);
 }
 
 export async function deleteStudent(id) {

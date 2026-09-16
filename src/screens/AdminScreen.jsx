@@ -3,7 +3,8 @@ import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObser
 import {
   getAllTeachers, getAllGrades, getAllStudents, getAllAttitudes,
   createUser, updateStudent, createStudent,
-  deleteStudent, deleteUserProfile, deleteGrade, searchStudents, searchParents,
+  deleteStudent, deactivateStudent, reactivateStudent, getInactiveStudents,
+  deleteUserProfile, deleteGrade, searchStudents, searchParents,
   searchObservations, getAttitudesByStudent,
   ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS,
   getAnnouncements, createAnnouncement, deleteAnnouncement,
@@ -219,6 +220,9 @@ function StudentsTab({ setSaving }) {
   const [editStudent, setEditStudent] = useState(null);
   const [editForm, setEditForm] = useState({ name:"", grade:"", tutorEmail:"" });
   const [success, setSuccess] = useState("");
+  const [showInactive, setShowInactive] = useState(false);
+  const [inactiveStudents, setInactiveStudents] = useState([]);
+  const [loadingInactive, setLoadingInactive] = useState(false);
 
   async function addStudent() {
     if (!form.name || !form.grade) { alert("Completá nombre y año"); return; }
@@ -228,10 +232,32 @@ function StudentsTab({ setSaving }) {
     setSuccess("✅ Alumno guardado"); setTimeout(()=>setSuccess(""), 2500);
     setSaving(false);
   }
-  async function removeStudent(id) {
-    if (!confirm("¿Eliminar este alumno?")) return;
-    setSaving(true); await deleteStudent(id); setSaving(false);
-    setEditStudent(null); setSuccess("✅ Alumno eliminado"); setTimeout(()=>setSuccess(""), 2500);
+  async function handleDeactivate(id, name) {
+    if (!confirm(`¿Dar de baja a ${name}? Sus notas y datos quedarán guardados.`)) return;
+    setSaving(true);
+    await deactivateStudent(id);
+    setSaving(false);
+    setEditStudent(null);
+    setSuccess("✅ Alumno dado de baja"); setTimeout(()=>setSuccess(""), 2500);
+    if (showInactive) loadInactive();
+  }
+  async function handleReactivate(id) {
+    setSaving(true);
+    await reactivateStudent(id);
+    setInactiveStudents(prev => prev.filter(s => s.id !== id));
+    setSaving(false);
+    setSuccess("✅ Alumno reactivado"); setTimeout(()=>setSuccess(""), 2500);
+  }
+  async function loadInactive() {
+    setLoadingInactive(true);
+    const list = await getInactiveStudents();
+    setInactiveStudents(list);
+    setLoadingInactive(false);
+  }
+  async function toggleInactive() {
+    const next = !showInactive;
+    setShowInactive(next);
+    if (next) loadInactive();
   }
   async function saveEdit() {
     if (!editForm.name || !editForm.grade) { alert("Completá nombre y año"); return; }
@@ -246,7 +272,12 @@ function StudentsTab({ setSaving }) {
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px" }}>
         <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>Alumnos</h2>
-        <button className="btn-primary" onClick={()=>setShowForm(!showForm)}>{showForm?"Cancelar":"+ Nuevo alumno"}</button>
+        <div style={{ display:"flex", gap:"8px" }}>
+          <button className="btn-secondary" style={{ fontSize:"0.85rem" }} onClick={toggleInactive}>
+            {showInactive ? "Ocultar inactivos" : "Ver alumnos inactivos"}
+          </button>
+          <button className="btn-primary" onClick={()=>setShowForm(!showForm)}>{showForm?"Cancelar":"+ Nuevo alumno"}</button>
+        </div>
       </div>
       {success && <div className="fade" style={{ background:"#d1fae5", border:"1px solid #6ee7b7", borderRadius:"10px", padding:"12px 16px", marginBottom:"20px", color:"#065f46", fontWeight:600 }}>{success}</div>}
       {showForm && (
@@ -282,9 +313,37 @@ function StudentsTab({ setSaving }) {
           </div>
           <div style={{ display:"flex", gap:"10px" }}>
             <button className="btn-primary" onClick={saveEdit}>💾 Guardar cambios</button>
-            <button className="btn-danger" onClick={()=>removeStudent(editStudent.id)}>Eliminar alumno</button>
+            <button className="btn-danger" onClick={()=>handleDeactivate(editStudent.id, editStudent.name)}>Dar de baja</button>
             <button onClick={()=>setEditStudent(null)} style={{ padding:"10px 16px", borderRadius:"10px", border:"1px solid #e2e8f0", cursor:"pointer", background:"white" }}>Cancelar</button>
           </div>
+        </div>
+      )}
+      {showInactive && (
+        <div className="card fade" style={{ padding:"24px", border:"2px solid #fed7aa" }}>
+          <h3 style={{ margin:"0 0 16px", color:"#92400e", fontSize:"1rem" }}>Alumnos inactivos ({inactiveStudents.length})</h3>
+          {loadingInactive ? (
+            <div style={{ color:"#64748b" }}>Cargando...</div>
+          ) : inactiveStudents.length === 0 ? (
+            <div style={{ color:"#64748b", fontSize:"0.9rem" }}>No hay alumnos inactivos.</div>
+          ) : (
+            <table style={{ width:"100%", borderCollapse:"collapse" }}>
+              <thead><tr style={{ borderBottom:"2px solid #fed7aa" }}>
+                {["Nombre","Año","Email tutor",""].map(h=><th key={h} style={{ padding:"10px 12px", textAlign:"left", fontSize:"0.75rem", color:"#94a3b8", textTransform:"uppercase" }}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {inactiveStudents.map(s=>(
+                  <tr key={s.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
+                    <td style={{ padding:"10px 12px", fontWeight:600, color:"#64748b" }}>{s.name}</td>
+                    <td style={{ padding:"10px 12px", color:"#94a3b8" }}>{s.grade||"—"}</td>
+                    <td style={{ padding:"10px 12px", color:"#94a3b8", fontSize:"0.85rem" }}>{s.tutorEmail||"—"}</td>
+                    <td style={{ padding:"10px 12px" }}>
+                      <button className="btn-primary" style={{ fontSize:"0.8rem" }} onClick={()=>handleReactivate(s.id)}>Reactivar</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
     </div>
@@ -797,10 +856,13 @@ function AllGradesTab({ grades, setGrades, setSaving, loaded, loading }) {
 
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px", flexWrap:"wrap", gap:"10px" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"12px", flexWrap:"wrap", gap:"10px" }}>
         <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>
           Evaluaciones ({folders.length} carpeta{folders.length!==1?"s":""} · {totalNotes} nota{totalNotes!==1?"s":""})
         </h2>
+      </div>
+      <div style={{ background:"#fffbeb", border:"1px solid #fde68a", borderRadius:"10px", padding:"10px 16px", marginBottom:"16px", fontSize:"0.85rem", color:"#92400e", fontWeight:600 }}>
+        ⚠️ Nota mínima institucional: <strong>3</strong>. El sistema no permite registrar notas menores a 3.
       </div>
 
       {/* Filtros */}
