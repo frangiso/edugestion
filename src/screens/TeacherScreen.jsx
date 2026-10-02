@@ -3,6 +3,7 @@ import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObser
 import {
   searchStudents, getStudentsByGrade,
   getGradesByTeacherPaged, getMoreGradesByTeacher, getGradesByStudent, getAllGradesByTeacher,
+  getGradesForTeacherAndSubjects,
   createGrade, createGradesBatch, deleteGrade, updateGrade,
   getGradeTypes, addGradeType,
   getObservationsByTeacher, createObservation, deleteObservation,
@@ -82,11 +83,11 @@ export default function TeacherScreen({ user, profile, logout }) {
 
   async function loadInitial() {
     setLoading(true);
-    const [{ grades: g, hasMore: hm }, types] = await Promise.all([
-      getGradesByTeacherPaged(user.uid),
+    const [g, types] = await Promise.all([
+      getGradesForTeacherAndSubjects(user.uid, subjects),
       getGradeTypes(user.uid),
     ]);
-    setGrades(g); setHasMore(hm); setGradeTypes(types);
+    setGrades(g); setHasMore(false); setGradeTypes(types);
     setLoading(false);
   }
 
@@ -161,7 +162,7 @@ export default function TeacherScreen({ user, profile, logout }) {
             {tab==="student"      && <StudentGradesTab user={user} subject={selectedSubject} setSaving={setSaving} />}
             {tab==="attitudes"    && <AttitudesTab user={user} profile={profile} subject={selectedSubject} attitudes={attitudes} setAttitudes={setAttitudes} setSaving={setSaving} loaded={attitudesLoaded} />}
             {tab==="observations" && <ObservationsTab user={user} profile={profile} observations={observations} setObservations={setObservations} setSaving={setSaving} loaded={observationsLoaded} />}
-            {tab==="alertas"      && <TeacherRiskTab user={user} />}
+            {tab==="alertas"      && <TeacherRiskTab user={user} subjects={subjects} />}
             {tab==="upcoming"     && <UpcomingTab user={user} profile={profile} subject={selectedSubject} setSaving={setSaving} />}
             {tab==="ranking"      && <Ranking grades={grades} subject={selectedSubject} />}
             {tab==="top6"         && <Top6Tab />}
@@ -1105,14 +1106,14 @@ function ObservationsTab({ user, profile, observations, setObservations, setSavi
 // ═══════════════════════════════════════════════════════════════════
 // ALERTAS DE RIESGO ACADÉMICO (vista docente)
 // ═══════════════════════════════════════════════════════════════════
-function TeacherRiskTab({ user }) {
+function TeacherRiskTab({ user, subjects }) {
   const [loading, setLoading] = useState(true);
   const [analyses, setAnalyses] = useState([]);
 
   useEffect(() => { load(); }, []);
 
   async function load() {
-    const teacherGrades = await getAllGradesByTeacher(user.uid);
+    const teacherGrades = await getGradesForTeacherAndSubjects(user.uid, subjects || []);
     const studentMap = {};
     teacherGrades.forEach(g => {
       if (!studentMap[g.studentId]) {

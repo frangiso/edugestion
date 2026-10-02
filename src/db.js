@@ -376,6 +376,38 @@ export async function getAllGradesByTeacher(teacherId) {
   return results;
 }
 
+// Trae notas del profesor + notas de sus materias (para reemplazos/compartidos)
+export async function getGradesForTeacherAndSubjects(teacherId, subjects) {
+  const cacheKey = `merged_${teacherId}`;
+  if (cache.teacherGrades[cacheKey]) return cache.teacherGrades[cacheKey];
+  const promises = [
+    getDocs(query(collection(db,"grades"), where("teacherId","==",teacherId), orderBy("date","desc")))
+  ];
+  if (subjects && subjects.length > 0) {
+    promises.push(getDocs(query(collection(db,"grades"), where("subject","in",subjects))));
+  }
+  const snaps = await Promise.all(promises);
+  const seen = new Set();
+  const results = [];
+  for (const snap of snaps) {
+    for (const d of snap.docs) {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        results.push({ id: d.id, ...d.data() });
+      }
+    }
+  }
+  results.sort((a, b) => (b.date?.toMillis?.() || 0) - (a.date?.toMillis?.() || 0));
+  cache.teacherGrades[cacheKey] = results;
+  results.forEach(g => {
+    if (g.studentId) {
+      if (!cache.studentGrades[g.studentId]) cache.studentGrades[g.studentId] = [];
+      if (!cache.studentGrades[g.studentId].find(x => x.id === g.id)) cache.studentGrades[g.studentId].push(g);
+    }
+  });
+  return results;
+}
+
 export async function searchGrades({ studentId = "", trimester = 0 } = {}) {
   if (studentId && cache.studentGrades[studentId]) {
     let r = cache.studentGrades[studentId];
@@ -454,7 +486,7 @@ export async function createGrade(data) {
   allGradesCache = null;
   const ref = await addDoc(collection(db,"grades"), { ...data, createdAt: serverTimestamp() });
   const newGrade = { id:ref.id, ...data };
-  if (data.teacherId) { if (!cache.teacherGrades[data.teacherId]) cache.teacherGrades[data.teacherId]=[]; cache.teacherGrades[data.teacherId]=[newGrade,...cache.teacherGrades[data.teacherId]]; }
+  if (data.teacherId) { if (!cache.teacherGrades[data.teacherId]) cache.teacherGrades[data.teacherId]=[]; cache.teacherGrades[data.teacherId]=[newGrade,...cache.teacherGrades[data.teacherId]]; delete cache.teacherGrades[`merged_${data.teacherId}`]; }
   if (data.studentId) { if (!cache.studentGrades[data.studentId]) cache.studentGrades[data.studentId]=[]; cache.studentGrades[data.studentId]=[newGrade,...cache.studentGrades[data.studentId]]; }
   return ref.id;
 }
@@ -471,7 +503,7 @@ export async function createGradesBatch(gradesData) {
     allNew.push(...newDocs);
   }
   allNew.forEach(ng => {
-    if (ng.teacherId) { if (!cache.teacherGrades[ng.teacherId]) cache.teacherGrades[ng.teacherId]=[]; cache.teacherGrades[ng.teacherId]=[ng,...cache.teacherGrades[ng.teacherId]]; }
+    if (ng.teacherId) { if (!cache.teacherGrades[ng.teacherId]) cache.teacherGrades[ng.teacherId]=[]; cache.teacherGrades[ng.teacherId]=[ng,...cache.teacherGrades[ng.teacherId]]; delete cache.teacherGrades[`merged_${ng.teacherId}`]; }
     if (ng.studentId) { if (!cache.studentGrades[ng.studentId]) cache.studentGrades[ng.studentId]=[]; cache.studentGrades[ng.studentId]=[ng,...cache.studentGrades[ng.studentId]]; }
   });
   return allNew;
