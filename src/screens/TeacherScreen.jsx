@@ -159,7 +159,7 @@ export default function TeacherScreen({ user, profile, logout }) {
           <div className="fade" key={tab}>
             {tab==="add"          && <AddGrade user={user} subject={selectedSubject} grades={grades} setGrades={setGrades} gradeTypes={gradeTypes} setGradeTypes={setGradeTypes} setSaving={setSaving} profile={profile} showToast={showToast} />}
             {tab==="mygrades"     && <MyGrades grades={grades} setGrades={setGrades} setSaving={setSaving} hasMore={hasMore} loadMore={loadMore} />}
-            {tab==="student"      && <StudentGradesTab user={user} subject={selectedSubject} setSaving={setSaving} />}
+            {tab==="student"      && <StudentGradesTab user={user} subject={selectedSubject} subjects={subjects} setSaving={setSaving} />}
             {tab==="attitudes"    && <AttitudesTab user={user} profile={profile} subject={selectedSubject} attitudes={attitudes} setAttitudes={setAttitudes} setSaving={setSaving} loaded={attitudesLoaded} />}
             {tab==="observations" && <ObservationsTab user={user} profile={profile} observations={observations} setObservations={setObservations} setSaving={setSaving} loaded={observationsLoaded} />}
             {tab==="alertas"      && <TeacherRiskTab user={user} subjects={subjects} />}
@@ -1245,7 +1245,7 @@ function Ranking({ grades, subject }) {
 // ═══════════════════════════════════════════════════════════════════
 // VER ALUMNO — vista individual + tabla masiva por curso
 // ═══════════════════════════════════════════════════════════════════
-function StudentGradesTab({ user, subject, setSaving }) {
+function StudentGradesTab({ user, subject, subjects, setSaving }) {
   const [mode, setMode] = useState("bulk"); // "bulk" | "individual"
   const [allTeacherGrades, setAllTeacherGrades] = useState(null); // null = no cargado aún
   const [loadingAll, setLoadingAll] = useState(false);
@@ -1258,11 +1258,11 @@ function StudentGradesTab({ user, subject, setSaving }) {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [loadingGrades, setLoadingGrades] = useState(false);
 
-  // Cargar TODAS las notas del profe una sola vez (se reutiliza en ambos modos)
+  // Cargar notas del profe + sus materias (incluye reemplazos)
   async function ensureTeacherGrades() {
     if (allTeacherGrades !== null) return allTeacherGrades;
     setLoadingAll(true);
-    const g = await getAllGradesByTeacher(user.uid);
+    const g = await getGradesForTeacherAndSubjects(user.uid, subjects || []);
     setAllTeacherGrades(g);
     setLoadingAll(false);
     return g;
