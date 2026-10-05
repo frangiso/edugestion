@@ -1176,6 +1176,7 @@ function CourseReportTab() {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState([]);
   const [nameFilter, setNameFilter] = useState("");
+  const [expandedCell, setExpandedCell] = useState(null); // {studentId, subject, trim} trim=0 → todos
 
   async function load(grade) {
     setLoading(true);
@@ -1189,11 +1190,14 @@ function CourseReportTab() {
       const subjectList = [...new Set(sg.map(g => g.subject))].sort();
       const subjects = subjectList.map(subject => {
         const sub = sg.filter(g => g.subject === subject);
-        const t1 = avg(sub.filter(g => g.trimester === 1).map(g => g.score));
-        const t2 = avg(sub.filter(g => g.trimester === 2).map(g => g.score));
-        const t3 = avg(sub.filter(g => g.trimester === 3).map(g => g.score));
+        const t1g = sub.filter(g => g.trimester === 1);
+        const t2g = sub.filter(g => g.trimester === 2);
+        const t3g = sub.filter(g => g.trimester === 3);
+        const t1 = avg(t1g.map(g => g.score));
+        const t2 = avg(t2g.map(g => g.score));
+        const t3 = avg(t3g.map(g => g.score));
         const final = avg(sub.map(g => g.score));
-        return { subject, t1, t2, t3, final, finalNum: sub.length ? parseFloat(avg(sub.map(g => g.score))) : null };
+        return { subject, t1, t2, t3, final, finalNum: sub.length ? parseFloat(avg(sub.map(g => g.score))) : null, t1g, t2g, t3g, allg: sub };
       });
       const allScores = sg.map(g => g.score);
       return { student, subjects, globalAvg: avg(allScores), globalAvgNum: allScores.length ? parseFloat(avg(allScores)) : null };
@@ -1275,22 +1279,62 @@ function CourseReportTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {subjects.map((s, i) => (
-                    <tr key={s.subject} style={{ borderTop:"1px solid #f1f5f9", background: i%2===0?"white":"#fafafa" }}>
-                      <td style={{ padding:"10px 16px", fontSize:"0.88rem", color:"#334155", fontWeight:500 }}>{s.subject}</td>
-                      {[s.t1, s.t2, s.t3].map((v, ti) => {
-                        const vNum = parseFloat(v);
-                        return (
-                          <td key={ti} style={{ padding:"10px 12px", textAlign:"center" }}>
-                            <span style={{ fontWeight:600, color: v==="–"?"#cbd5e1":scoreColor(vNum), fontSize:"0.9rem" }}>{v}</span>
+                  {subjects.flatMap((s, i) => {
+                    function toggleCell(trim) {
+                      setExpandedCell(prev =>
+                        prev?.studentId===student.id && prev?.subject===s.subject && prev?.trim===trim
+                          ? null : { studentId:student.id, subject:s.subject, trim }
+                      );
+                    }
+                    function isExp(trim) {
+                      return expandedCell?.studentId===student.id && expandedCell?.subject===s.subject && expandedCell?.trim===trim;
+                    }
+                    const rows = [
+                      <tr key={s.subject} style={{ borderTop:"1px solid #f1f5f9", background: i%2===0?"white":"#fafafa" }}>
+                        <td style={{ padding:"10px 16px", fontSize:"0.88rem", color:"#334155", fontWeight:500 }}>{s.subject}</td>
+                        {[{v:s.t1,gs:s.t1g,trim:1},{v:s.t2,gs:s.t2g,trim:2},{v:s.t3,gs:s.t3g,trim:3}].map(({v,gs,trim}) => {
+                          const vNum = parseFloat(v);
+                          const exp = isExp(trim);
+                          return (
+                            <td key={trim} onClick={() => gs.length>0 && toggleCell(trim)}
+                                style={{ padding:"10px 12px", textAlign:"center", cursor:gs.length>0?"pointer":"default", background:exp?"#dbeafe":"inherit", transition:"background 0.15s" }}>
+                              <span style={{ fontWeight:600, color: v==="–"?"#cbd5e1":scoreColor(vNum), fontSize:"0.9rem" }}>{v}</span>
+                              {gs.length>0 && <span style={{ marginLeft:"2px", fontSize:"0.6rem", color:"#93c5fd" }}>{exp?"▲":"▼"}</span>}
+                            </td>
+                          );
+                        })}
+                        <td onClick={() => s.allg.length>0 && toggleCell(0)}
+                            style={{ padding:"10px 12px", textAlign:"center", cursor:s.allg.length>0?"pointer":"default", background:isExp(0)?"#dbeafe":"inherit", transition:"background 0.15s" }}>
+                          <span style={{ fontWeight:700, color: s.finalNum===null?"#cbd5e1":scoreColor(s.finalNum), fontSize:"0.92rem" }}>{s.final}</span>
+                          {s.allg.length>0 && <span style={{ marginLeft:"2px", fontSize:"0.6rem", color:"#93c5fd" }}>{isExp(0)?"▲":"▼"}</span>}
+                        </td>
+                      </tr>
+                    ];
+                    const anyExp = [0,1,2,3].some(t => isExp(t));
+                    if (anyExp) {
+                      const trim = expandedCell.trim;
+                      const expandGrades = trim===0
+                        ? [...s.allg].sort((a,b) => a.trimester-b.trimester || a.date.localeCompare(b.date))
+                        : (trim===1?s.t1g:trim===2?s.t2g:s.t3g);
+                      rows.push(
+                        <tr key={`${s.subject}_exp`} style={{ background:"#eff6ff" }}>
+                          <td colSpan={5} style={{ padding:"10px 16px" }}>
+                            <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
+                              {expandGrades.map(g => (
+                                <div key={g.id} style={{ background:"white", border:`1.5px solid ${scoreColor(g.score)}`, borderRadius:"8px", padding:"7px 12px", fontSize:"0.8rem", minWidth:"100px" }}>
+                                  <span style={{ fontWeight:800, color:scoreColor(g.score), fontSize:"1rem" }}>{g.score}</span>
+                                  <span style={{ color:"#64748b" }}> · {g.type}</span>
+                                  <div style={{ fontSize:"0.72rem", color:"#94a3b8" }}>{g.date}{trim===0 && <span style={{ marginLeft:"4px", background:"#e0e7ff", color:"#4338ca", borderRadius:"4px", padding:"0 4px", fontSize:"0.65rem" }}>T{g.trimester}</span>}</div>
+                                  {g.note && <div style={{ fontSize:"0.7rem", color:"#7c3aed", marginTop:"2px" }}>💬 {g.note}</div>}
+                                </div>
+                              ))}
+                            </div>
                           </td>
-                        );
-                      })}
-                      <td style={{ padding:"10px 12px", textAlign:"center" }}>
-                        <span style={{ fontWeight:700, color: s.finalNum===null?"#cbd5e1":scoreColor(s.finalNum), fontSize:"0.92rem" }}>{s.final}</span>
-                      </td>
-                    </tr>
-                  ))}
+                        </tr>
+                      );
+                    }
+                    return rows;
+                  })}
                 </tbody>
               </table>
             </div>
