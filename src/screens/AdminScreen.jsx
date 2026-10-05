@@ -1942,10 +1942,13 @@ function printCertificate(student, genero) {
 <html lang="es">
 <head>
 <meta charset="UTF-8"/>
+<title>Certificado - ${student.name}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Times+New+Roman&family=Arial&display=swap');
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family: Arial, sans-serif; padding: 60px 80px; color: #000; background: #fff; font-size: 14pt; }
+  .aviso { background:#fffbeb; border:1px solid #fbbf24; border-radius:8px; padding:10px 16px; margin-bottom:24px; font-size:11pt; color:#92400e; }
+  .aviso strong { display:block; margin-bottom:4px; }
   .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 60px; }
   .header-text { line-height: 1.6; }
   .header-text .ciclo { font-weight: bold; font-size: 13pt; }
@@ -1957,10 +1960,15 @@ function printCertificate(student, genero) {
   @media print {
     body { padding: 0; }
     button { display: none !important; }
+    .aviso { display: none !important; }
   }
 </style>
 </head>
 <body>
+<div class="aviso">
+  <strong>⚠️ Para imprimir sin encabezado ni fecha del navegador:</strong>
+  En el diálogo de impresión → <strong>Más ajustes</strong> → desmarcá <strong>"Encabezados y pies de página"</strong>
+</div>
 <div class="header">
   <div class="header-text">
     <p class="ciclo">CICLO LECTIVO ${year}</p>
