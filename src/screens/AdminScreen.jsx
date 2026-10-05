@@ -1200,7 +1200,10 @@ function CourseReportTab() {
         return { subject, t1, t2, t3, final, finalNum: sub.length ? parseFloat(avg(sub.map(g => g.score))) : null, t1g, t2g, t3g, allg: sub };
       });
       const allScores = sg.map(g => g.score);
-      return { student, subjects, globalAvg: avg(allScores), globalAvgNum: allScores.length ? parseFloat(avg(allScores)) : null };
+      const t1Avg = avg(sg.filter(g => g.trimester === 1).map(g => g.score));
+      const t2Avg = avg(sg.filter(g => g.trimester === 2).map(g => g.score));
+      const t3Avg = avg(sg.filter(g => g.trimester === 3).map(g => g.score));
+      return { student, subjects, globalAvg: avg(allScores), globalAvgNum: allScores.length ? parseFloat(avg(allScores)) : null, t1Avg, t2Avg, t3Avg };
     });
     setReport(data);
     setLoading(false);
@@ -1254,14 +1257,26 @@ function CourseReportTab() {
         </div>
       )}
 
-      {!loading && filtered.map(({ student, subjects, globalAvg, globalAvgNum }) => (
+      {!loading && filtered.map(({ student, subjects, globalAvg, globalAvgNum, t1Avg, t2Avg, t3Avg }) => (
         <div key={student.id} className="card" style={{ marginBottom:"16px" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 20px", borderBottom:"1px solid #f1f5f9" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 20px", borderBottom:"1px solid #f1f5f9", flexWrap:"wrap", gap:"10px" }}>
             <div style={{ fontWeight:700, fontSize:"1rem", color:"#1e293b" }}>{student.name}</div>
             {globalAvgNum !== null && (
-              <span style={{ fontWeight:800, fontSize:"1.05rem", color:scoreColor(globalAvgNum), fontFamily:"'Playfair Display',serif" }}>
-                Promedio general: {globalAvg}
-              </span>
+              <div style={{ display:"flex", gap:"20px", flexWrap:"wrap", alignItems:"center" }}>
+                {[{label:"1er Trim.", v:t1Avg},{label:"2do Trim.", v:t2Avg},{label:"3er Trim.", v:t3Avg}].map(({label,v}) => {
+                  const vNum = parseFloat(v);
+                  return v !== "–" ? (
+                    <div key={label} style={{ textAlign:"center" }}>
+                      <div style={{ fontSize:"0.65rem", color:"#94a3b8", textTransform:"uppercase", letterSpacing:"0.4px" }}>{label}</div>
+                      <div style={{ fontWeight:700, fontSize:"1rem", color:scoreColor(vNum), fontFamily:"'Playfair Display',serif" }}>{v}</div>
+                    </div>
+                  ) : null;
+                })}
+                <div style={{ textAlign:"center", borderLeft:"2px solid #e2e8f0", paddingLeft:"20px" }}>
+                  <div style={{ fontSize:"0.65rem", color:"#94a3b8", textTransform:"uppercase", letterSpacing:"0.4px" }}>Prom. General</div>
+                  <div style={{ fontWeight:800, fontSize:"1.15rem", color:scoreColor(globalAvgNum), fontFamily:"'Playfair Display',serif" }}>{globalAvg}</div>
+                </div>
+              </div>
             )}
           </div>
           {subjects.length === 0 ? (
