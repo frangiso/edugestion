@@ -91,6 +91,7 @@ export default function AdminScreen({ user, profile, logout }) {
             ["announcements","📢 Avisos"],
             ["internalobs","🔒 Obs. Internas"],
             ["export","📥 Exportar Excel"],
+            ["certificados","📄 Certificados"],
           ].map(([k,l]) => (
             <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
           ))}
@@ -112,6 +113,7 @@ export default function AdminScreen({ user, profile, logout }) {
             {tab === "announcements"  && <AnnouncementsTab user={user} profile={profile} />}
             {tab === "internalobs"    && <AllInternalObsTab />}
             {tab === "export"         && <ExportTab />}
+            {tab === "certificados"   && <CertificadosTab />}
           </div>
         )}
       </div>
@@ -302,6 +304,12 @@ function StudentsTab({ setSaving }) {
       {editStudent && (
         <div className="card fade" style={{ padding:"24px", border:"2px solid #fde68a", background:"#fffbeb" }}>
           <h3 style={{ margin:"0 0 16px", color:"#92400e", fontSize:"1rem" }}>Editando: {editStudent.name}</h3>
+          {editStudent.dni && (
+            <div style={{ display:"inline-flex", alignItems:"center", gap:"8px", background:"#f0f9ff", border:"1px solid #bae6fd", borderRadius:"8px", padding:"6px 14px", marginBottom:"16px" }}>
+              <span style={{ fontSize:"0.78rem", color:"#0369a1", fontWeight:600, textTransform:"uppercase" }}>DNI</span>
+              <span style={{ fontWeight:700, color:"#0c4a6e", fontFamily:"monospace", fontSize:"1rem" }}>{editStudent.dni}</span>
+            </div>
+          )}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"16px", marginBottom:"16px" }}>
             <div><label>Nombre completo</label><input value={editForm.name} onChange={e=>setEditForm({...editForm,name:e.target.value})} /></div>
             <div><label>Año</label>
@@ -1910,3 +1918,146 @@ function AllInternalObsTab() {
   );
 }
 
+
+// ════════════════════════════════════════════════════════════════════
+// CERTIFICADOS
+// ════════════════════════════════════════════════════════════════════
+const GRADE_LABEL = { "1°":"1er año","2°":"2do año","3°":"3er año","4°":"4to año","5°":"5to año","6°":"6to año" };
+const MONTHS_ES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+
+function gradeLabel(g) { return GRADE_LABEL[g] || g; }
+
+function printCertificate(student, genero) {
+  const now = new Date();
+  const day = now.getDate();
+  const month = MONTHS_ES[now.getMonth()].toUpperCase();
+  const year = now.getFullYear();
+  const art   = genero === "F" ? "la" : "el";
+  const artM  = genero === "F" ? "la" : "el";
+  const titulo = genero === "F" ? "Estudiante" : "Estudiante";
+  const cond  = genero === "F" ? "Alumna regular" : "Alumno regular";
+  const logoUrl = window.location.origin + "/logo-escuela.jpg";
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Times+New+Roman&family=Arial&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, sans-serif; padding: 60px 80px; color: #000; background: #fff; font-size: 14pt; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 60px; }
+  .header-text { line-height: 1.6; }
+  .header-text .ciclo { font-weight: bold; font-size: 13pt; }
+  .logo { width: 100px; height: 100px; object-fit: contain; }
+  .body { line-height: 2; text-align: justify; margin-bottom: 80px; }
+  .firma { text-align: center; margin-top: 40px; }
+  .firma p { font-size: 13pt; }
+  @page { size: A4; margin: 2cm; }
+  @media print {
+    body { padding: 0; }
+    button { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-text">
+    <p class="ciclo">CICLO LECTIVO ${year}</p>
+    <p class="ciclo">${String(day).padStart(2,'0')} DE ${month}</p>
+  </div>
+  <img class="logo" src="${logoUrl}" alt="Logo escuela" />
+</div>
+<div class="body">
+  <p>
+    A las autoridades que lo requieran Certifico que ${art} ${titulo}&nbsp;
+    <strong>${student.name} D.N.I: ${student.dni || "–"}</strong>
+    &nbsp;es ${cond} de
+    <strong>${gradeLabel(student.grade)}</strong>
+    &nbsp;de la Escuela Generativa Profesor Guillermo Visco, en el Ciclo Lectivo ${year}.
+  </p>
+</div>
+<p style="text-align:center; margin-bottom:80px;">Sin otro particular, saludo atentamente.</p>
+<div class="firma">
+  <p>Coordinador General</p>
+  <p>Blasco Andrés</p>
+</div>
+<script>window.onload = function(){ window.print(); }<\/script>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank", "width=900,height=700");
+  win.document.write(html);
+  win.document.close();
+}
+
+function CertificadosTab() {
+  const [student, setStudent] = useState(null);
+  const [genero, setGenero] = useState("F");
+
+  return (
+    <div>
+      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 8px" }}>Certificados</h2>
+      <p style={{ color:"#64748b", marginBottom:"24px", fontSize:"0.9rem" }}>Generá un certificado de alumno/a regular en formato para imprimir o guardar como PDF.</p>
+
+      <div className="card" style={{ padding:"24px", marginBottom:"20px" }}>
+        <h3 style={{ margin:"0 0 12px", color:"#1e3a5f", fontSize:"1rem" }}>Buscar alumno</h3>
+        <StudentSearch buttonLabel="Seleccionar" onSelect={s => { setStudent(s); }} />
+      </div>
+
+      {student && (
+        <div className="card fade" style={{ padding:"28px", border:"2px solid #e0e7ff" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:"16px", marginBottom:"24px", flexWrap:"wrap" }}>
+            <div>
+              <div style={{ fontWeight:700, fontSize:"1.1rem", color:"#1e3a5f" }}>{student.name}</div>
+              <div style={{ color:"#64748b", fontSize:"0.88rem" }}>{student.grade} · DNI: {student.dni || <span style={{color:"#ef4444"}}>Sin DNI cargado</span>}</div>
+            </div>
+            <button onClick={()=>setStudent(null)} style={{ marginLeft:"auto", padding:"6px 12px", borderRadius:"8px", border:"1px solid #e2e8f0", cursor:"pointer", background:"white", fontSize:"0.85rem" }}>Cambiar alumno</button>
+          </div>
+
+          <div style={{ marginBottom:"24px" }}>
+            <label style={{ fontWeight:600, color:"#374151", fontSize:"0.9rem", display:"block", marginBottom:"8px" }}>Género para el certificado</label>
+            <div style={{ display:"flex", gap:"12px" }}>
+              {[["F","Alumna (femenino)"],["M","Alumno (masculino)"]].map(([v,l])=>(
+                <label key={v} style={{ display:"flex", alignItems:"center", gap:"8px", cursor:"pointer", padding:"10px 18px", borderRadius:"10px", border:`2px solid ${genero===v?"#6366f1":"#e2e8f0"}`, background:genero===v?"#eef2ff":"white", fontWeight:genero===v?600:400, fontSize:"0.9rem", color:genero===v?"#4338ca":"#374151" }}>
+                  <input type="radio" value={v} checked={genero===v} onChange={()=>setGenero(v)} style={{ accentColor:"#6366f1" }} />
+                  {l}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:"12px", padding:"28px 36px", marginBottom:"24px", fontFamily:"serif", lineHeight:2, fontSize:"0.95rem" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"32px" }}>
+              <div>
+                <div style={{ fontWeight:"bold" }}>CICLO LECTIVO {new Date().getFullYear()}</div>
+                <div style={{ fontWeight:"bold" }}>{String(new Date().getDate()).padStart(2,"0")} DE {MONTHS_ES[new Date().getMonth()].toUpperCase()}</div>
+              </div>
+              <img src="/logo-escuela.jpg" alt="Logo" style={{ width:"72px", height:"72px", objectFit:"contain", borderRadius:"50%" }} />
+            </div>
+            <p style={{ textAlign:"justify", marginBottom:"40px" }}>
+              A las autoridades que lo requieran Certifico que {genero==="F"?"la":"el"} Estudiante{" "}
+              <strong>{student.name} D.N.I: {student.dni || "–"}</strong>{" "}
+              es {genero==="F"?"Alumna":"Alumno"} regular de{" "}
+              <strong>{gradeLabel(student.grade)}</strong>{" "}
+              de la Escuela Generativa Profesor Guillermo Visco, en el Ciclo Lectivo {new Date().getFullYear()}.
+            </p>
+            <p style={{ textAlign:"center", marginBottom:"60px" }}>Sin otro particular, saludo atentamente.</p>
+            <div style={{ textAlign:"center" }}>
+              <p>Coordinador General</p>
+              <p>Blasco Andrés</p>
+            </div>
+          </div>
+
+          <button
+            className="btn-primary"
+            onClick={() => printCertificate(student, genero)}
+            style={{ fontSize:"1rem", padding:"12px 28px" }}
+          >
+            🖨️ Imprimir / Guardar como PDF
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
