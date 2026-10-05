@@ -1514,6 +1514,7 @@ function BulkAveragesView({ user, subject, allTeacherGrades, loadingAll, ensureT
   const [courseStudents, setCourseStudents] = useState([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [expandedCell, setExpandedCell] = useState(null); // {studentId, trim}
 
   // Cargar alumnos del curso seleccionado y las notas del profe
   useEffect(() => {
@@ -1574,32 +1575,49 @@ function BulkAveragesView({ user, subject, allTeacherGrades, loadingAll, ensureT
               <tr style={{ background:"#1e3a5f", color:"white" }}>
                 <th style={{ padding:"12px 16px", textAlign:"left", fontWeight:600, fontSize:"0.85rem" }}>Alumno</th>
                 {trimNames.map((n,i) => (
-                  <th key={i} style={{ padding:"12px 16px", textAlign:"center", fontWeight:600, fontSize:"0.85rem" }}>{n}</th>
+                  <th key={i} style={{ padding:"12px 16px", textAlign:"center", fontWeight:600, fontSize:"0.85rem" }}>{n} <span style={{ fontWeight:400, fontSize:"0.7rem", opacity:0.7 }}>▾</span></th>
                 ))}
-                <th style={{ padding:"12px 16px", textAlign:"center", fontWeight:600, fontSize:"0.85rem" }}>Prom. Anual</th>
+                <th style={{ padding:"12px 16px", textAlign:"center", fontWeight:600, fontSize:"0.85rem" }}>Prom. Anual <span style={{ fontWeight:400, fontSize:"0.7rem", opacity:0.7 }}>▾</span></th>
                 <th style={{ padding:"12px 16px", textAlign:"center", fontWeight:600, fontSize:"0.85rem" }}>Detalle</th>
               </tr>
             </thead>
             <tbody>
-              {courseStudents.map((s, idx) => {
+              {courseStudents.flatMap((s, idx) => {
                 const t1 = trimAvg(s.id, 1);
                 const t2 = trimAvg(s.id, 2);
                 const t3 = trimAvg(s.id, 3);
                 const ga = generalAvg(s.id);
                 const gaNum = parseFloat(ga);
-                return (
-                  <tr key={s.id} style={{ borderBottom:"1px solid #f1f5f9", background: idx%2===0?"white":"#f8fafc" }}>
+                const isAnyExp = expandedCell?.studentId === s.id;
+                const allSg = allTeacherGrades ? allTeacherGrades.filter(g => g.studentId===s.id && g.subject===subject) : [];
+
+                function cellGrades(trim) {
+                  return allTeacherGrades ? allTeacherGrades.filter(g => g.studentId===s.id && g.subject===subject && g.trimester===trim) : [];
+                }
+                function toggleCell(trim) {
+                  setExpandedCell(prev => prev?.studentId===s.id && prev?.trim===trim ? null : { studentId:s.id, trim });
+                }
+
+                const rows = [
+                  <tr key={s.id} style={{ borderBottom: isAnyExp?"none":"1px solid #f1f5f9", background: idx%2===0?"white":"#f8fafc" }}>
                     <td style={{ padding:"12px 16px", fontWeight:600, color:"#1e293b" }}>{s.name}</td>
-                    {[t1,t2,t3].map((v,i) => {
+                    {[1,2,3].map(trim => {
+                      const v = trim===1?t1:trim===2?t2:t3;
                       const vNum = parseFloat(v);
+                      const gs = cellGrades(trim);
+                      const isExp = expandedCell?.studentId===s.id && expandedCell?.trim===trim;
                       return (
-                        <td key={i} style={{ padding:"12px 16px", textAlign:"center" }}>
+                        <td key={trim} onClick={() => gs.length>0 && toggleCell(trim)}
+                            style={{ padding:"12px 16px", textAlign:"center", cursor:gs.length>0?"pointer":"default", background:isExp?"#dbeafe":"inherit", transition:"background 0.15s" }}>
                           <span style={{ fontWeight:700, color: v==="–"?"#cbd5e1":scoreColor(vNum), fontSize:"1rem" }}>{v}</span>
+                          {gs.length>0 && <span style={{ marginLeft:"3px", fontSize:"0.65rem", color:"#93c5fd" }}>{isExp?"▲":"▼"}</span>}
                         </td>
                       );
                     })}
-                    <td style={{ padding:"12px 16px", textAlign:"center" }}>
+                    <td onClick={() => allSg.length>0 && toggleCell(0)}
+                        style={{ padding:"12px 16px", textAlign:"center", cursor:allSg.length>0?"pointer":"default", background:expandedCell?.studentId===s.id&&expandedCell?.trim===0?"#dbeafe":"inherit", transition:"background 0.15s" }}>
                       <span style={{ fontWeight:800, fontSize:"1.1rem", color: ga==="–"?"#cbd5e1":scoreColor(gaNum), fontFamily:"'Playfair Display',serif" }}>{ga}</span>
+                      {allSg.length>0 && <span style={{ marginLeft:"3px", fontSize:"0.65rem", color:"#93c5fd" }}>{expandedCell?.studentId===s.id&&expandedCell?.trim===0?"▲":"▼"}</span>}
                     </td>
                     <td style={{ padding:"12px 16px", textAlign:"center" }}>
                       <button onClick={() => onSelectStudent(s)} style={{ padding:"5px 14px", borderRadius:"20px", background:"#dbeafe", color:"#1e40af", border:"none", cursor:"pointer", fontSize:"0.8rem", fontWeight:600 }}>
@@ -1607,7 +1625,32 @@ function BulkAveragesView({ user, subject, allTeacherGrades, loadingAll, ensureT
                       </button>
                     </td>
                   </tr>
-                );
+                ];
+
+                if (isAnyExp) {
+                  const expandGrades = expandedCell.trim === 0
+                    ? allSg.sort((a,b) => a.trimester-b.trimester || a.date.localeCompare(b.date))
+                    : cellGrades(expandedCell.trim);
+                  rows.push(
+                    <tr key={`${s.id}_exp`} style={{ background:"#eff6ff", borderBottom:"1px solid #bfdbfe" }}>
+                      <td colSpan={6} style={{ padding:"12px 20px" }}>
+                        <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
+                          {expandGrades.map(g => (
+                            <div key={g.id} style={{ background:"white", border:`2px solid ${scoreColor(g.score)}`, borderRadius:"10px", padding:"8px 14px", minWidth:"110px" }}>
+                              <div style={{ fontWeight:800, color:scoreColor(g.score), fontSize:"1.1rem", fontFamily:"'Playfair Display',serif", lineHeight:1 }}>
+                                {g.score}<span style={{ fontSize:"0.68rem", color:"#94a3b8", fontWeight:400 }}>/10</span>
+                              </div>
+                              <div style={{ fontSize:"0.78rem", fontWeight:600, color:"#1e293b", marginTop:"3px" }}>{g.type}</div>
+                              <div style={{ fontSize:"0.72rem", color:"#94a3b8" }}>{g.date}{expandedCell.trim===0 && <span style={{ marginLeft:"4px", background:"#e0e7ff", color:"#4338ca", borderRadius:"4px", padding:"0 4px", fontSize:"0.65rem" }}>T{g.trimester}</span>}</div>
+                              {g.note && <div style={{ fontSize:"0.7rem", color:"#7c3aed", marginTop:"2px" }}>💬 {g.note}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+                return rows;
               })}
             </tbody>
           </table>
