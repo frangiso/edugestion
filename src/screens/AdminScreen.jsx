@@ -1953,8 +1953,9 @@ function printCertificate(student, genero) {
   .body { line-height: 2; text-align: justify; margin-bottom: 80px; }
   .firma { text-align: center; margin-top: 40px; }
   .firma p { font-size: 13pt; }
+  @page { size: A4; margin: 2cm; }
   @media print {
-    body { padding: 40px 60px; }
+    body { padding: 0; }
     button { display: none !important; }
   }
 </style>
