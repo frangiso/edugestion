@@ -92,6 +92,7 @@ export default function AdminScreen({ user, profile, logout }) {
             ["internalobs","🔒 Obs. Internas"],
             ["export","📥 Exportar Excel"],
             ["certificados","📄 Certificados"],
+            ["permisos","📝 Permisos de Examen"],
           ].map(([k,l]) => (
             <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
           ))}
@@ -114,6 +115,7 @@ export default function AdminScreen({ user, profile, logout }) {
             {tab === "internalobs"    && <AllInternalObsTab />}
             {tab === "export"         && <ExportTab />}
             {tab === "certificados"   && <CertificadosTab />}
+            {tab === "permisos"       && <PermisosTab />}
           </div>
         )}
       </div>
@@ -2066,6 +2068,236 @@ function CertificadosTab() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// PERMISOS DE EXAMEN
+// ════════════════════════════════════════════════════════════════════
+function printPermiso(student, condicion, anio, materias) {
+  const now = new Date();
+  const dia  = String(now.getDate()).padStart(2, "0");
+  const mes  = String(now.getMonth() + 1).padStart(2, "0");
+  const anioActual = now.getFullYear();
+  const mesNombre = MONTHS_ES[now.getMonth()].toUpperCase();
+
+  // Build 14 rows — filled rows first, then blanks
+  const filas = Array.from({ length: 14 }, (_, i) => {
+    const mat = materias[i] || "";
+    return `<tr>
+      <td class="num">${i + 1}</td>
+      <td class="asig">${mat}</td>
+      <td class="small">${mat ? dia : ""}</td>
+      <td class="small">${mat ? mes : ""}</td>
+      <td class="small">${mat ? anioActual : ""}</td>
+      <td class="calif"></td>
+      <td class="firma"></td>
+      <td class="firma"></td>
+    </tr>`;
+  }).join("");
+
+  const logoSrc = window.location.origin + "/logo-escuela.jpg";
+  const generoStr = condicion === "Libre" ? "libre" : condicion === "Previa" ? "previa" : "regular";
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<title>Permiso de Examen - ${student.name}</title>
+<style>
+  @page { size: A4; margin: 1.5cm; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, sans-serif; font-size: 10pt; color: #000; background: #fff; }
+  .aviso { background:#fffbeb; border:1px solid #fbbf24; border-radius:6px; padding:8px 14px; margin-bottom:16px; font-size:9pt; color:#92400e; }
+  .aviso strong { display:block; margin-bottom:2px; }
+  .top { text-align:center; margin-bottom:18px; }
+  .top img { width:70px; height:70px; object-fit:contain; border-radius:50%; margin-bottom:6px; display:block; margin-left:auto; margin-right:auto; }
+  .top .escuela { font-weight:bold; font-size:11pt; letter-spacing:0.5px; }
+  .top .titulo { font-weight:bold; font-size:11pt; }
+  .linea { border-bottom: 1px dotted #000; display:inline-block; }
+  .campo { margin-bottom:10px; font-size:10.5pt; }
+  .campo .etiqueta { font-weight:bold; }
+  .campo .valor { border-bottom:1px dotted #000; display:inline-block; min-width:200px; padding:0 4px; }
+  .condicion-line { margin-bottom:10px; font-size:10.5pt; line-height:1.8; }
+  table { width:100%; border-collapse:collapse; margin:14px 0; }
+  th { background:#000; color:#fff; font-size:9pt; padding:5px 4px; text-align:center; border:1px solid #000; }
+  td { border:1px solid #000; font-size:9pt; padding:4px; text-align:center; height:22px; }
+  td.asig { text-align:left; padding-left:6px; }
+  td.num { width:28px; }
+  td.small { width:38px; }
+  td.calif { width:70px; }
+  td.firma { width:90px; }
+  .footer-fecha { text-align:center; margin-top:10px; font-size:10.5pt; font-weight:bold; }
+  .nota { margin-top:14px; font-size:9.5pt; font-weight:bold; line-height:1.5; }
+  @media print { .aviso { display:none !important; } }
+</style>
+</head>
+<body>
+<div class="aviso">
+  <strong>⚠️ Para imprimir sin encabezado ni fecha del navegador:</strong>
+  Más ajustes → desmarcá <strong>"Encabezados y pies de página"</strong>
+</div>
+<div class="top">
+  <img src="${logoSrc}" alt="Logo"/>
+  <div class="escuela">ESC.GENERATIVA PROF.GUILLERMO VISCO</div>
+  <div class="titulo">PERMISO DE EXAMEN</div>
+</div>
+<div class="campo">
+  <span class="etiqueta">ALUMNO/A: </span>
+  <span class="valor">${student.name}</span>
+</div>
+<div class="campo">
+  <span class="etiqueta">CONDICIÓN DE EXAMEN:</span>&nbsp;&nbsp;EQUIVALENCIAS – PREVIAS – REGULARES
+</div>
+<div class="campo">
+  <span class="etiqueta">D.N.I:</span>
+  <span class="valor">${student.dni || "–"}</span>
+</div>
+<div class="condicion-line">
+  CONSTA QUE EL/LA ALUMNO/A RINDE EN CONDICIÓN <span class="linea">&nbsp;&nbsp;<strong>${condicion.toUpperCase()}</strong>&nbsp;&nbsp;</span>, ESTÁ
+  HABILITADO/A PARA RENDIR LAS ASIGNATURAS CORRESPONDIENTES AL <span class="linea">&nbsp;&nbsp;<strong>${anio}</strong>&nbsp;&nbsp;</span> AÑO.
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>N°</th>
+      <th>ASIGNATURAS</th>
+      <th>DIA</th>
+      <th>MES</th>
+      <th>AÑO</th>
+      <th>CALIFICACIÓN</th>
+      <th>FIRMA PROFESOR</th>
+      <th>FIRMA TUTOR</th>
+    </tr>
+  </thead>
+  <tbody>${filas}</tbody>
+</table>
+<div class="footer-fecha">
+  SAN LUIS &nbsp;&nbsp;&nbsp; ${dia} &nbsp;&nbsp; DE &nbsp;&nbsp; ${mesNombre} &nbsp;&nbsp; DE ${anioActual}
+</div>
+<div class="nota">
+  NOTA: PARA RENDIR EXAMEN EL ALUMNO DEBERÁ PRESENTAR A LA MESA EXAMINADORA ESTE PERMISO FIRMADO POR EL TUTOR Y CARPETA COMPLETA.
+</div>
+<script>window.onload = function(){ window.print(); }<\/script>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank", "width=900,height=750");
+  win.document.write(html);
+  win.document.close();
+}
+
+function PermisosTab() {
+  const [student, setStudent]       = useState(null);
+  const [condicion, setCondicion]   = useState("Previa");
+  const [anio, setAnio]             = useState("1°");
+  const [materias, setMaterias]     = useState([""]);
+  const [matInput, setMatInput]     = useState("");
+
+  function addMateria() {
+    const val = matInput.trim();
+    if (!val) return;
+    if (materias.length >= 14) { alert("Máximo 14 materias"); return; }
+    setMaterias(prev => [...prev.filter(m => m), val]);
+    setMatInput("");
+  }
+  function removeMateria(i) {
+    setMaterias(prev => prev.filter((_, idx) => idx !== i));
+  }
+
+  const condiciones = ["Previa", "Libre", "Regular"];
+
+  return (
+    <div>
+      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 8px" }}>Permisos de Examen</h2>
+      <p style={{ color:"#64748b", marginBottom:"24px", fontSize:"0.9rem" }}>Completá los datos y generá el permiso listo para imprimir.</p>
+
+      {/* Alumno */}
+      <div className="card" style={{ padding:"24px", marginBottom:"20px" }}>
+        <h3 style={{ margin:"0 0 12px", color:"#1e3a5f", fontSize:"1rem" }}>1. Seleccionar alumno</h3>
+        <StudentSearch buttonLabel="Seleccionar" onSelect={s => setStudent(s)} />
+      </div>
+
+      {student && (<>
+        {/* Info del alumno */}
+        <div className="card fade" style={{ padding:"16px 24px", marginBottom:"16px", background:"#f0f9ff", border:"1px solid #bae6fd" }}>
+          <div style={{ fontWeight:700, color:"#0c4a6e" }}>{student.name}</div>
+          <div style={{ fontSize:"0.85rem", color:"#0369a1" }}>DNI: {student.dni || <span style={{color:"#ef4444"}}>Sin DNI</span>} · {student.grade}</div>
+          <button onClick={()=>setStudent(null)} style={{ marginTop:"8px", fontSize:"0.8rem", padding:"4px 10px", borderRadius:"6px", border:"1px solid #bae6fd", cursor:"pointer", background:"white" }}>Cambiar alumno</button>
+        </div>
+
+        {/* Condición y año */}
+        <div className="card" style={{ padding:"24px", marginBottom:"16px" }}>
+          <h3 style={{ margin:"0 0 16px", color:"#1e3a5f", fontSize:"1rem" }}>2. Condición de examen y año</h3>
+          <div style={{ display:"flex", gap:"32px", flexWrap:"wrap" }}>
+            <div>
+              <label style={{ fontWeight:600, fontSize:"0.88rem", color:"#374151", display:"block", marginBottom:"8px" }}>Condición</label>
+              <div style={{ display:"flex", gap:"8px" }}>
+                {condiciones.map(c => (
+                  <label key={c} style={{ display:"flex", alignItems:"center", gap:"6px", cursor:"pointer", padding:"8px 16px", borderRadius:"8px", border:`2px solid ${condicion===c?"#6366f1":"#e2e8f0"}`, background:condicion===c?"#eef2ff":"white", fontWeight:condicion===c?700:400, fontSize:"0.9rem", color:condicion===c?"#4338ca":"#374151" }}>
+                    <input type="radio" value={c} checked={condicion===c} onChange={()=>setCondicion(c)} style={{ accentColor:"#6366f1" }} />
+                    {c}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label style={{ fontWeight:600, fontSize:"0.88rem", color:"#374151", display:"block", marginBottom:"8px" }}>Año</label>
+              <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
+                {GRADES.map(g => (
+                  <label key={g} style={{ display:"flex", alignItems:"center", gap:"6px", cursor:"pointer", padding:"8px 14px", borderRadius:"8px", border:`2px solid ${anio===g?"#0891b2":"#e2e8f0"}`, background:anio===g?"#ecfeff":"white", fontWeight:anio===g?700:400, fontSize:"0.9rem", color:anio===g?"#0e7490":"#374151" }}>
+                    <input type="radio" value={g} checked={anio===g} onChange={()=>setAnio(g)} style={{ accentColor:"#0891b2" }} />
+                    {g}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Materias */}
+        <div className="card" style={{ padding:"24px", marginBottom:"20px" }}>
+          <h3 style={{ margin:"0 0 4px", color:"#1e3a5f", fontSize:"1rem" }}>3. Asignaturas ({materias.filter(m=>m).length}/14)</h3>
+          <p style={{ color:"#64748b", fontSize:"0.82rem", marginBottom:"14px" }}>La fecha (día/mes/año) se completa automáticamente con la fecha de impresión.</p>
+          <div style={{ display:"flex", gap:"8px", marginBottom:"12px" }}>
+            <div style={{ flex:1, position:"relative" }}>
+              <input
+                value={matInput}
+                onChange={e=>setMatInput(e.target.value)}
+                onKeyDown={e=>{ if(e.key==="Enter") addMateria(); }}
+                placeholder="Escribí o seleccioná una materia..."
+                list="materias-list"
+                style={{ width:"100%" }}
+              />
+              <datalist id="materias-list">
+                {SUBJECTS.map(s=><option key={s} value={s}/>)}
+              </datalist>
+            </div>
+            <button className="btn-primary" onClick={addMateria} style={{ whiteSpace:"nowrap" }}>+ Agregar</button>
+          </div>
+          {materias.filter(m=>m).length > 0 && (
+            <div style={{ display:"flex", flexWrap:"wrap", gap:"8px" }}>
+              {materias.filter(m=>m).map((m,i) => (
+                <span key={i} style={{ display:"flex", alignItems:"center", gap:"6px", background:"#f1f5f9", border:"1px solid #e2e8f0", borderRadius:"20px", padding:"4px 12px", fontSize:"0.85rem" }}>
+                  <span style={{ fontWeight:600, color:"#374151", minWidth:"16px", textAlign:"center" }}>{i+1}.</span>
+                  {m}
+                  <button onClick={()=>removeMateria(i)} style={{ border:"none", background:"none", cursor:"pointer", color:"#ef4444", fontSize:"1rem", lineHeight:1, padding:0 }}>×</button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Botón imprimir */}
+        <button
+          className="btn-primary"
+          onClick={() => printPermiso(student, condicion, anio, materias.filter(m=>m))}
+          style={{ fontSize:"1rem", padding:"12px 28px" }}
+        >
+          🖨️ Generar / Imprimir permiso
+        </button>
+      </>)}
     </div>
   );
 }
