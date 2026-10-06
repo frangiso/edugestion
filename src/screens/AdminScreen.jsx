@@ -2088,9 +2088,9 @@ function printPermiso(student, condicion, anio, materias) {
     return `<tr>
       <td class="num">${i + 1}</td>
       <td class="asig">${mat}</td>
-      <td class="small">${mat ? dia : ""}</td>
-      <td class="small">${mat ? mes : ""}</td>
-      <td class="small">${mat ? anioActual : ""}</td>
+      <td class="small"></td>
+      <td class="small"></td>
+      <td class="small"></td>
       <td class="calif"></td>
       <td class="firma"></td>
       <td class="firma"></td>
