@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab, analyzeStudentRisk, RiskAlertsPanel } from "../components";
+import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab, analyzeStudentRisk, RiskAlertsPanel, SubjectStatusTab } from "../components";
 import {
   searchStudents, getStudentsByGrade,
   getGradesByTeacherPaged, getMoreGradesByTeacher, getGradesByStudent, getAllGradesByTeacher,
@@ -146,6 +146,7 @@ export default function TeacherScreen({ user, profile, logout }) {
             ["attitudes","🎯 Actitudinales"],
             ["observations","💬 Observaciones"],
             ["alertas","⚠️ Alertas"],
+            ["riesgo","📉 Llevan la materia"],
             ["upcoming","📅 Próximas eval."],
             ["ranking","📊 Rendimiento"],
             ["top6","🏆 Top 6° Año"],
@@ -163,6 +164,7 @@ export default function TeacherScreen({ user, profile, logout }) {
             {tab==="attitudes"    && <AttitudesTab user={user} profile={profile} subject={selectedSubject} attitudes={attitudes} setAttitudes={setAttitudes} setSaving={setSaving} loaded={attitudesLoaded} />}
             {tab==="observations" && <ObservationsTab user={user} profile={profile} observations={observations} setObservations={setObservations} setSaving={setSaving} loaded={observationsLoaded} />}
             {tab==="alertas"      && <TeacherRiskTab user={user} subjects={subjects} />}
+            {tab==="riesgo"       && <SubjectStatusTab grades={grades} subjects={subjects} defaultSubject={selectedSubject} />}
             {tab==="upcoming"     && <UpcomingTab user={user} profile={profile} subject={selectedSubject} setSaving={setSaving} />}
             {tab==="ranking"      && <Ranking grades={grades} subject={selectedSubject} />}
             {tab==="top6"         && <Top6Tab />}

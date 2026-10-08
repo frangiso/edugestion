@@ -484,3 +484,206 @@ export function CourseObservationsTab({ user, profile }) {
     </div>
   );
 }
+
+// ─── Estado por materia: llevan la materia / en riesgo ───────────
+// Usado en TeacherScreen y AdminScreen
+const SUBJECT_GRADES_LIST = ["1°","2°","3°","4°","5°","6°"];
+
+export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
+  const allSubjects = (() => {
+    if (subjects && subjects.length > 0) return subjects;
+    return [...new Set(grades.map(g => g.subject).filter(Boolean))].sort();
+  })();
+
+  const [selectedSubject, setSelectedSubject] = useState(defaultSubject || allSubjects[0] || "");
+  const [gradeFilter, setGradeFilter] = useState("");
+
+  const subjectGrades = selectedSubject
+    ? grades.filter(g => g.subject === selectedSubject)
+    : grades;
+
+  const students = (() => {
+    const map = {};
+    subjectGrades.forEach(g => {
+      if (!map[g.studentId]) {
+        map[g.studentId] = { id: g.studentId, name: g.studentName || "–", grade: g.studentGrade || "", entries: [] };
+      }
+      map[g.studentId].entries.push(g);
+    });
+
+    return Object.values(map)
+      .filter(s => !gradeFilter || s.grade === gradeFilter)
+      .map(s => {
+        const t = [1,2,3].map(trim => {
+          const scores = s.entries.filter(g => g.trimester === trim).map(g => g.score);
+          return scores.length ? parseFloat((scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(2)) : null;
+        });
+        const validT = t.filter(v => v !== null);
+        const average = validT.length
+          ? parseFloat((validT.reduce((a,b)=>a+b,0)/validT.length).toFixed(2))
+          : null;
+        const remainingTrims = t.filter(v => v === null).length;
+        let neededAvg = null;
+        let canRecover = false;
+        if (average !== null && average < 7 && remainingTrims > 0) {
+          const sumDone = validT.reduce((a,b)=>a+b,0);
+          neededAvg = parseFloat(((21 - sumDone) / remainingTrims).toFixed(1));
+          canRecover = neededAvg <= 10;
+        }
+        return { ...s, t, average, neededAvg, canRecover, count: s.entries.length };
+      })
+      .filter(s => s.average !== null)
+      .sort((a,b) => a.average - b.average);
+  })();
+
+  const failing = students.filter(s => s.average < 7);
+  const atRisk  = students.filter(s => s.average >= 7 && s.average < 7.5);
+
+  function StudentCard({ s, borderColor }) {
+    return (
+      <div className="card" style={{ padding:"14px 16px", borderLeft:`4px solid ${borderColor}`, marginBottom:"8px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"6px" }}>
+          <div>
+            <div style={{ fontWeight:700, color:"#1e293b", fontSize:"0.95rem" }}>{s.name}</div>
+            {s.grade && <span className="badge" style={{ background:"#dbeafe", color:"#1e40af", marginTop:"2px", display:"inline-block" }}>{s.grade}</span>}
+          </div>
+          <div style={{ textAlign:"right", marginLeft:"10px", flexShrink:0 }}>
+            <div style={{ fontWeight:800, fontSize:"1.25rem", color:s.average<7?"#ef4444":"#f59e0b", fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{s.average}</div>
+            <div style={{ fontSize:"0.68rem", color:"#94a3b8" }}>{s.count} eval.</div>
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:"5px" }}>
+          {s.t.map((v,i) => (
+            <div key={i} style={{ flex:1, textAlign:"center", padding:"4px 4px", borderRadius:"6px",
+              background:v===null?"#f8fafc":v<7?"#fee2e2":"#d1fae5",
+              border:`1px solid ${v===null?"#e2e8f0":v<7?"#fca5a5":"#6ee7b7"}` }}>
+              <div style={{ fontSize:"0.6rem", color:"#94a3b8" }}>T{i+1}</div>
+              <div style={{ fontWeight:700, fontSize:"0.82rem", color:v===null?"#cbd5e1":v<7?"#dc2626":"#059669" }}>
+                {v !== null ? v : "–"}
+              </div>
+            </div>
+          ))}
+        </div>
+        {s.neededAvg !== null && (
+          <div style={{ marginTop:"8px", padding:"5px 10px", borderRadius:"8px",
+            background:s.canRecover?"#fffbeb":"#fef2f2",
+            border:`1px solid ${s.canRecover?"#fcd34d":"#fca5a5"}`,
+            fontSize:"0.76rem", fontWeight:700,
+            color:s.canRecover?"#92400e":"#dc2626" }}>
+            {s.canRecover
+              ? `⚠️ Necesita ${s.neededAvg} en el trimestre restante para aprobar`
+              : `❌ No puede recuperarse en el trimestre restante (necesitaría ${s.neededAvg})`}
+          </div>
+        )}
+        {s.neededAvg === null && s.average < 7 && (
+          <div style={{ marginTop:"8px", padding:"5px 10px", borderRadius:"8px",
+            background:"#fef2f2", border:"1px solid #fca5a5",
+            fontSize:"0.76rem", fontWeight:700, color:"#dc2626" }}>
+            ❌ Los tres trimestres ya están completos
+          </div>
+        )}
+        {s.average >= 7 && s.average < 7.5 && (
+          <div style={{ marginTop:"8px", padding:"5px 10px", borderRadius:"8px",
+            background:"#fffbeb", border:"1px solid #fcd34d",
+            fontSize:"0.76rem", fontWeight:700, color:"#92400e" }}>
+            ⚠️ Promedio ajustado — puede bajar de 7 con una nota baja
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 20px" }}>
+        Alumnos en riesgo por materia
+      </h2>
+
+      {allSubjects.length > 1 && (
+        <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"14px" }}>
+          {allSubjects.map(s => (
+            <button key={s} onClick={() => setSelectedSubject(s)} style={{
+              padding:"7px 16px", borderRadius:"20px",
+              border:`2px solid ${selectedSubject===s?"#1e3a5f":"#e2e8f0"}`,
+              background:selectedSubject===s?"#1e3a5f":"white",
+              color:selectedSubject===s?"white":"#64748b",
+              cursor:"pointer", fontSize:"0.82rem", fontWeight:600,
+            }}>{s}</button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display:"flex", gap:"8px", marginBottom:"20px", flexWrap:"wrap", alignItems:"center" }}>
+        <span style={{ fontSize:"0.8rem", color:"#64748b", fontWeight:600 }}>Año:</span>
+        {["", ...SUBJECT_GRADES_LIST].map(g => (
+          <button key={g} onClick={() => setGradeFilter(g)} style={{
+            padding:"5px 12px", borderRadius:"20px",
+            border:`1px solid ${gradeFilter===g?"#1e3a5f":"#e2e8f0"}`,
+            background:gradeFilter===g?"#1e3a5f":"white",
+            color:gradeFilter===g?"white":"#64748b",
+            cursor:"pointer", fontSize:"0.78rem", fontWeight:600,
+          }}>{g || "Todos"}</button>
+        ))}
+      </div>
+
+      {subjectGrades.length === 0 ? (
+        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"3rem" }}>📊</div>
+          <p>No hay evaluaciones cargadas para esta materia</p>
+        </div>
+      ) : (
+        <>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"20px" }}>
+            <div>
+              <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"14px", padding:"10px 14px", background:"#fef2f2", borderRadius:"10px", border:"1px solid #fca5a5" }}>
+                <span style={{ fontSize:"1.2rem" }}>🔴</span>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontWeight:800, color:"#dc2626", fontSize:"0.95rem" }}>Llevan la materia</div>
+                  <div style={{ fontSize:"0.75rem", color:"#94a3b8" }}>Promedio anual menor a 7</div>
+                </div>
+                <span style={{ background:"#dc2626", color:"white", borderRadius:"20px", padding:"3px 12px", fontWeight:800, fontSize:"0.9rem" }}>
+                  {failing.length}
+                </span>
+              </div>
+              {failing.length === 0 ? (
+                <div className="card" style={{ padding:"24px", textAlign:"center", color:"#94a3b8" }}>
+                  <div style={{ fontSize:"2rem" }}>✅</div>
+                  <p style={{ margin:0, fontSize:"0.88rem" }}>Ningún alumno está reprobando</p>
+                </div>
+              ) : (
+                <div>{failing.map(s => <StudentCard key={s.id} s={s} borderColor="#ef4444" />)}</div>
+              )}
+            </div>
+
+            <div>
+              <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"14px", padding:"10px 14px", background:"#fffbeb", borderRadius:"10px", border:"1px solid #fcd34d" }}>
+                <span style={{ fontSize:"1.2rem" }}>🟡</span>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontWeight:800, color:"#d97706", fontSize:"0.95rem" }}>En riesgo</div>
+                  <div style={{ fontSize:"0.75rem", color:"#94a3b8" }}>Promedio entre 7.0 y 7.5</div>
+                </div>
+                <span style={{ background:"#d97706", color:"white", borderRadius:"20px", padding:"3px 12px", fontWeight:800, fontSize:"0.9rem" }}>
+                  {atRisk.length}
+                </span>
+              </div>
+              {atRisk.length === 0 ? (
+                <div className="card" style={{ padding:"24px", textAlign:"center", color:"#94a3b8" }}>
+                  <div style={{ fontSize:"2rem" }}>✅</div>
+                  <p style={{ margin:0, fontSize:"0.88rem" }}>Ningún alumno en riesgo</p>
+                </div>
+              ) : (
+                <div>{atRisk.map(s => <StudentCard key={s.id} s={s} borderColor="#f59e0b" />)}</div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ marginTop:"16px", padding:"12px 18px", background:"#f8fafc", borderRadius:"10px", border:"1px solid #e2e8f0", fontSize:"0.83rem", color:"#64748b" }}>
+            Total con evaluaciones: <strong>{students.length}</strong> ·{" "}
+            <span style={{ color:"#dc2626", fontWeight:700 }}>{failing.length} reprobando</span> ·{" "}
+            <span style={{ color:"#d97706", fontWeight:700 }}>{atRisk.length} en riesgo</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
