@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab, analyzeStudentRisk, RiskAlertsPanel } from "../components";
+import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab, analyzeStudentRisk, RiskAlertsPanel, SubjectStatusTab } from "../components";
 import {
   getAllTeachers, getAllGrades, getAllStudents, getAllAttitudes,
   createUser, updateStudent, createStudent,
@@ -68,7 +68,7 @@ export default function AdminScreen({ user, profile, logout }) {
   // Cambio de pestaña con lazy loading de notas
   function handleTabChange(newTab) {
     setTab(newTab);
-    if (newTab === "allgrades" || newTab === "overview") ensureGradesLoaded();
+    if (newTab === "allgrades" || newTab === "overview" || newTab === "riesgo") ensureGradesLoaded();
   }
 
   return (
@@ -85,6 +85,7 @@ export default function AdminScreen({ user, profile, logout }) {
             ["allgrades","📋 Notas"],
             ["coursereport","🏫 Por Curso"],
             ["alertas","⚠️ En Riesgo"],
+            ["riesgo","📉 Llevan la materia"],
             ["attitudes","🎯 Actitudinales"],
             ["allobservations","💬 Observaciones"],
             ["top6","🏆 Top 6° Año"],
@@ -108,6 +109,7 @@ export default function AdminScreen({ user, profile, logout }) {
             {tab === "allgrades"       && <AllGradesTab grades={grades} setGrades={setGrades} setSaving={setSaving} loaded={gradesLoaded} loading={gradesLoading} />}
             {tab === "coursereport"    && <CourseReportTab />}
             {tab === "alertas"         && <RiskAlertsTab />}
+            {tab === "riesgo"          && (gradesLoading ? <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando notas...</div> : <SubjectStatusTab grades={grades} />)}
             {tab === "attitudes"       && <AllAttitudesTab />}
             {tab === "allobservations" && <AllObservationsTab user={user} profile={profile} />}
             {tab === "top6"            && <Top6Tab />}
