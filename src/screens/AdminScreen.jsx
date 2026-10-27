@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab, analyzeStudentRisk, RiskAlertsPanel, SubjectStatusTab } from "../components";
+import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab, analyzeStudentRisk, RiskAlertsPanel, SubjectStatusTab, EvalNotificationBanner } from "../components";
 import {
   getAllTeachers, getAllGrades, getAllStudents, getAllAttitudes,
   createUser, updateStudent, createStudent,
@@ -98,6 +98,7 @@ export default function AdminScreen({ user, profile, logout }) {
             <button key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>handleTabChange(k)}>{l}</button>
           ))}
         </div>
+        <EvalNotificationBanner />
         {loading ? (
           <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando datos...</div>
         ) : (

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor } from "../components";
+import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, EvalNotificationBanner } from "../components";
 import { getChildrenByIds, getGradesByStudent, getObservationsByStudent, getAttitudesByStudent, ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS, getAnnouncements, getCourseObservations, getUpcomingFiltered } from "../db";
 
 // Convierte valor actitudinal a número para promediar
@@ -227,6 +227,9 @@ export default function ParentScreen({ user, profile, logout }) {
                 </div>
               </div>
             </div>
+
+            {/* Notificaciones de nuevas evaluaciones */}
+            <EvalNotificationBanner filterGrade={child?.grade} />
 
             {/* Tabs */}
             <div style={{ borderBottom:"2px solid #e2e8f0", marginBottom:"20px", display:"flex", gap:"4px", flexWrap:"wrap" }}>

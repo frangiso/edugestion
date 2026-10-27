@@ -786,6 +786,28 @@ export async function updateUpcoming(id, teacherId, data) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// NOTIFICACIONES DE EVALUACIONES
+// Colección: eval_notifications
+// ═══════════════════════════════════════════════════════════════════
+let evalNotifsCache = null;
+
+export async function createEvalNotification({ teacherName, subject, grade, evalTitle, dateEnd, action }) {
+  const data = { teacherName, subject, grade, evalTitle, dateEnd, action, date: today(), createdAt: serverTimestamp() };
+  const ref = await addDoc(collection(db, "eval_notifications"), data);
+  evalNotifsCache = null; // invalidar cache
+  return ref.id;
+}
+
+export async function getEvalNotifications() {
+  if (evalNotifsCache) return evalNotifsCache;
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
+  const cutoffStr = cutoff.toISOString().split("T")[0];
+  const snap = await getDocs(query(collection(db, "eval_notifications"), where("date", ">=", cutoffStr), orderBy("date", "desc")));
+  evalNotifsCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return evalNotifsCache;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // LOGIN
 // ═══════════════════════════════════════════════════════════════════
 export async function loginUser(email, password) {
