@@ -589,26 +589,47 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
           const scores = s.entries.filter(g => g.trimester === trim).map(g => g.score);
           return scores.length ? parseFloat((scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(2)) : null;
         });
+
+        // El último trimestre con notas está "en curso" — el alumno puede aún mejorarlo
+        const lastIdx = t.reduce((last, v, i) => v !== null ? i : last, -1);
+        // Trimestres anteriores al en-curso: ya están cerrados
+        const lockedAvgs = lastIdx > 0 ? t.slice(0, lastIdx).filter(v => v !== null) : [];
+        const sumLocked = lockedAvgs.reduce((a,b)=>a+b,0);
+        const remainingCount = lastIdx >= 0 ? 3 - lastIdx : 0;
+        const inProgressTrim = lastIdx >= 0 ? lastIdx + 1 : null; // 1-indexed
+
+        // canRecover: null = va bien o sin datos, false = imposible, true = puede lograrlo con esfuerzo
+        let neededAvg = null;
+        let canRecover = null;
+
+        if (lastIdx >= 0 && remainingCount > 0) {
+          const needed = parseFloat(((21 - sumLocked) / remainingCount).toFixed(1));
+          neededAvg = needed;
+          if (needed > 10) {
+            canRecover = false;
+          } else if (t[lastIdx] >= needed) {
+            canRecover = null; // ya alcanzó lo que necesita en el trimestre en curso
+          } else {
+            canRecover = true;
+          }
+        }
+
         const validT = t.filter(v => v !== null);
         const average = validT.length
           ? parseFloat((validT.reduce((a,b)=>a+b,0)/validT.length).toFixed(2))
           : null;
-        const remainingTrims = t.filter(v => v === null).length;
-        let neededAvg = null;
-        let canRecover = false;
-        if (average !== null && average < 7 && remainingTrims > 0) {
-          const sumDone = validT.reduce((a,b)=>a+b,0);
-          neededAvg = parseFloat(((21 - sumDone) / remainingTrims).toFixed(1));
-          canRecover = neededAvg <= 10;
-        }
-        return { ...s, t, average, neededAvg, canRecover, count: s.entries.length };
+
+        return { ...s, t, average, neededAvg, canRecover, inProgressTrim, count: s.entries.length };
       })
-      .filter(s => s.average !== null)
-      .sort((a,b) => a.average - b.average);
+      .filter(s => s.average !== null && s.canRecover !== null)
+      .sort((a,b) => {
+        if (a.canRecover !== b.canRecover) return a.canRecover ? 1 : -1; // imposible primero
+        return (b.neededAvg || 0) - (a.neededAvg || 0);
+      });
   })();
 
-  const failing = students.filter(s => s.average < 7);
-  const atRisk  = students.filter(s => s.average >= 7 && s.average < 7.5);
+  const failing = students.filter(s => s.canRecover === false);
+  const atRisk  = students.filter(s => s.canRecover === true);
 
   function StudentCard({ s, borderColor }) {
     return (
@@ -619,45 +640,41 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
             {s.grade && <span className="badge" style={{ background:"#dbeafe", color:"#1e40af", marginTop:"2px", display:"inline-block" }}>{s.grade}</span>}
           </div>
           <div style={{ textAlign:"right", marginLeft:"10px", flexShrink:0 }}>
-            <div style={{ fontWeight:800, fontSize:"1.25rem", color:s.average<7?"#ef4444":"#f59e0b", fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{s.average}</div>
+            <div style={{ fontWeight:800, fontSize:"1.25rem", color:s.canRecover===false?"#ef4444":"#f59e0b", fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{s.average}</div>
             <div style={{ fontSize:"0.68rem", color:"#94a3b8" }}>{s.count} eval.</div>
           </div>
         </div>
         <div style={{ display:"flex", gap:"5px" }}>
-          {s.t.map((v,i) => (
-            <div key={i} style={{ flex:1, textAlign:"center", padding:"4px 4px", borderRadius:"6px",
-              background:v===null?"#f8fafc":v<7?"#fee2e2":"#d1fae5",
-              border:`1px solid ${v===null?"#e2e8f0":v<7?"#fca5a5":"#6ee7b7"}` }}>
-              <div style={{ fontSize:"0.6rem", color:"#94a3b8" }}>T{i+1}</div>
-              <div style={{ fontWeight:700, fontSize:"0.82rem", color:v===null?"#cbd5e1":v<7?"#dc2626":"#059669" }}>
-                {v !== null ? v : "–"}
+          {s.t.map((v,i) => {
+            const isInProgress = s.inProgressTrim === i + 1;
+            return (
+              <div key={i} style={{ flex:1, textAlign:"center", padding:"4px 4px", borderRadius:"6px",
+                background:v===null?"#f8fafc":isInProgress?"#fef9c3":v<7?"#fee2e2":"#d1fae5",
+                border:`1px solid ${v===null?"#e2e8f0":isInProgress?"#fde047":v<7?"#fca5a5":"#6ee7b7"}` }}>
+                <div style={{ fontSize:"0.6rem", color:isInProgress?"#92400e":"#94a3b8" }}>
+                  T{i+1}{isInProgress?" ✏️":""}
+                </div>
+                <div style={{ fontWeight:700, fontSize:"0.82rem", color:v===null?"#cbd5e1":isInProgress?"#78350f":v<7?"#dc2626":"#059669" }}>
+                  {v !== null ? v : "–"}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
-        {s.neededAvg !== null && (
-          <div style={{ marginTop:"8px", padding:"5px 10px", borderRadius:"8px",
-            background:s.canRecover?"#fffbeb":"#fef2f2",
-            border:`1px solid ${s.canRecover?"#fcd34d":"#fca5a5"}`,
-            fontSize:"0.76rem", fontWeight:700,
-            color:s.canRecover?"#92400e":"#dc2626" }}>
-            {s.canRecover
-              ? `⚠️ Necesita ${s.neededAvg} en el trimestre restante para aprobar`
-              : `❌ No puede recuperarse en el trimestre restante (necesitaría ${s.neededAvg})`}
-          </div>
-        )}
-        {s.neededAvg === null && s.average < 7 && (
-          <div style={{ marginTop:"8px", padding:"5px 10px", borderRadius:"8px",
-            background:"#fef2f2", border:"1px solid #fca5a5",
-            fontSize:"0.76rem", fontWeight:700, color:"#dc2626" }}>
-            ❌ Los tres trimestres ya están completos
-          </div>
-        )}
-        {s.average >= 7 && s.average < 7.5 && (
+        {s.canRecover === true && s.neededAvg !== null && (
           <div style={{ marginTop:"8px", padding:"5px 10px", borderRadius:"8px",
             background:"#fffbeb", border:"1px solid #fcd34d",
             fontSize:"0.76rem", fontWeight:700, color:"#92400e" }}>
-            ⚠️ Promedio ajustado — puede bajar de 7 con una nota baja
+            ⚠️ Necesita promedio {s.neededAvg} en T{s.inProgressTrim} para aprobar
+          </div>
+        )}
+        {s.canRecover === false && (
+          <div style={{ marginTop:"8px", padding:"5px 10px", borderRadius:"8px",
+            background:"#fef2f2", border:"1px solid #fca5a5",
+            fontSize:"0.76rem", fontWeight:700, color:"#dc2626" }}>
+            {s.neededAvg !== null
+              ? `❌ No puede recuperarse — necesitaría ${s.neededAvg} en T${s.inProgressTrim}`
+              : "❌ Los trimestres cerraron con promedio insuficiente"}
           </div>
         )}
       </div>
@@ -710,7 +727,7 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
                 <span style={{ fontSize:"1.2rem" }}>🔴</span>
                 <div style={{ flex:1 }}>
                   <div style={{ fontWeight:800, color:"#dc2626", fontSize:"0.95rem" }}>Llevan la materia</div>
-                  <div style={{ fontSize:"0.75rem", color:"#94a3b8" }}>Promedio anual menor a 7</div>
+                  <div style={{ fontSize:"0.75rem", color:"#94a3b8" }}>Sin posibilidad de recuperarse</div>
                 </div>
                 <span style={{ background:"#dc2626", color:"white", borderRadius:"20px", padding:"3px 12px", fontWeight:800, fontSize:"0.9rem" }}>
                   {failing.length}
@@ -731,7 +748,7 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
                 <span style={{ fontSize:"1.2rem" }}>🟡</span>
                 <div style={{ flex:1 }}>
                   <div style={{ fontWeight:800, color:"#d97706", fontSize:"0.95rem" }}>En riesgo</div>
-                  <div style={{ fontSize:"0.75rem", color:"#94a3b8" }}>Promedio entre 7.0 y 7.5</div>
+                  <div style={{ fontSize:"0.75rem", color:"#94a3b8" }}>Puede aprobar si saca buena nota</div>
                 </div>
                 <span style={{ background:"#d97706", color:"white", borderRadius:"20px", padding:"3px 12px", fontWeight:800, fontSize:"0.9rem" }}>
                   {atRisk.length}
@@ -749,9 +766,9 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
           </div>
 
           <div style={{ marginTop:"16px", padding:"12px 18px", background:"#f8fafc", borderRadius:"10px", border:"1px solid #e2e8f0", fontSize:"0.83rem", color:"#64748b" }}>
-            Total con evaluaciones: <strong>{students.length}</strong> ·{" "}
-            <span style={{ color:"#dc2626", fontWeight:700 }}>{failing.length} reprobando</span> ·{" "}
-            <span style={{ color:"#d97706", fontWeight:700 }}>{atRisk.length} en riesgo</span>
+            Total en seguimiento: <strong>{students.length}</strong> ·{" "}
+            <span style={{ color:"#dc2626", fontWeight:700 }}>{failing.length} sin recuperación</span> ·{" "}
+            <span style={{ color:"#d97706", fontWeight:700 }}>{atRisk.length} con posibilidad</span>
           </div>
         </>
       )}
