@@ -621,7 +621,7 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
 
         return { ...s, t, average, neededAvg, canRecover, inProgressTrim, count: s.entries.length };
       })
-      .filter(s => s.average !== null && s.canRecover !== null)
+      .filter(s => s.average !== null && s.canRecover !== null && s.t[0] !== null)
       .sort((a,b) => {
         if (a.canRecover !== b.canRecover) return a.canRecover ? 1 : -1; // imposible primero
         return (b.neededAvg || 0) - (a.neededAvg || 0);
@@ -769,6 +769,10 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
             Total en seguimiento: <strong>{students.length}</strong> ·{" "}
             <span style={{ color:"#dc2626", fontWeight:700 }}>{failing.length} sin recuperación</span> ·{" "}
             <span style={{ color:"#d97706", fontWeight:700 }}>{atRisk.length} con posibilidad</span>
+            <br />
+            <span style={{ color:"#94a3b8", fontSize:"0.75rem" }}>
+              * No se muestran alumnos sin nota en T1 (su calificación depende de la institución de origen)
+            </span>
           </div>
         </>
       )}
