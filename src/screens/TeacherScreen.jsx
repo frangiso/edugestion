@@ -268,12 +268,15 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
     setNewType(""); setShowNewType(false);
   }
 
+  const activeTrim = getCurrentTrimester();
+
   // Carpetas existentes del mismo curso+materia para agregar alumno ausente
+  // Solo se muestran carpetas del trimestre activo (el pasado ya está cerrado)
   const existingFolders = (() => {
     if (!selectedStudent) return [];
     const groupMap = {};
     grades
-      .filter(g => g.subject === subject && g.studentGrade === selectedStudent.grade)
+      .filter(g => g.subject === subject && g.studentGrade === selectedStudent.grade && g.trimester === activeTrim)
       .forEach(g => {
         const key = `${g.type}|||${g.date}|||${g.trimester}`;
         if (!groupMap[key]) groupMap[key] = { type:g.type, date:g.date, trimester:g.trimester, count:0 };
@@ -385,7 +388,11 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
                 <div>
                   <label>Trimestre</label>
                   <select value={form.trimester} onChange={e=>setForm({...form,trimester:parseInt(e.target.value)})}>
-                    {trimNames.map((n,i)=><option key={i+1} value={i+1}>{n}</option>)}
+                    {trimNames.map((n,i)=>(
+                      <option key={i+1} value={i+1} disabled={i+1 < activeTrim}>
+                        {n}{i+1 < activeTrim ? " (cerrado)" : ""}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div><label>Fecha</label><input type="date" max={new Date().toISOString().split("T")[0]} value={form.date} onChange={e=>setForm({...form,date:e.target.value})} /></div>
@@ -419,7 +426,11 @@ function AddGrade({ user, subject, grades, setGrades, gradeTypes, setGradeTypes,
                   <div>
                     <label>Trimestre</label>
                     <select value={bulkForm.trimester} onChange={e=>setBulkForm({...bulkForm,trimester:parseInt(e.target.value)})}>
-                      {trimNames.map((n,i)=><option key={i+1} value={i+1}>{n}</option>)}
+                      {trimNames.map((n,i)=>(
+                        <option key={i+1} value={i+1} disabled={i+1 < activeTrim}>
+                          {n}{i+1 < activeTrim ? " (cerrado)" : ""}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div><label>Fecha</label><input type="date" max={new Date().toISOString().split("T")[0]} value={bulkForm.date} onChange={e=>setBulkForm({...bulkForm,date:e.target.value})} /></div>
