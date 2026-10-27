@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   getAllStudents, getAllGrades,
   getCourseObservations, createCourseObservation, deleteCourseObservation,
+  getUpcomingFiltered,
 } from "./db";
 
 // ─── Helpers globales ─────────────────────────────────────────────
@@ -23,6 +24,76 @@ export const scoreColor = (s) => {
 };
 
 export const trimNames = ["1er Trimestre", "2do Trimestre", "3er Trimestre"];
+
+// ─── Banners de notificación de nuevas evaluaciones ──────────────
+// Se muestra al director y tutores cuando un profesor publica/edita una eval.
+// Se descarta por cada usuario usando localStorage.
+const DISMISSED_KEY = "edugestion_dismissed_evnotifs";
+
+function getDismissed() {
+  try { return new Set(JSON.parse(localStorage.getItem(DISMISSED_KEY) || "[]")); }
+  catch { return new Set(); }
+}
+function addDismissed(id) {
+  try {
+    const s = getDismissed(); s.add(id);
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...s]));
+  } catch {}
+}
+
+export function EvalNotificationBanner({ filterGrade }) {
+  const [notifs, setNotifs] = useState([]);
+
+  useEffect(() => {
+    // Cutoff: últimos 7 días
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
+    const cutoffStr = cutoff.toISOString().split("T")[0];
+    const d = getDismissed();
+    // Reutiliza la cache de upcoming (0 lecturas extra si ya fue cargado)
+    getUpcomingFiltered({}).then(items => {
+      const recent = items.filter(u =>
+        (u.publishedAt || "") >= cutoffStr && !d.has(u.id) &&
+        (!filterGrade || !u.grade || u.grade === "" || u.grade === filterGrade)
+      );
+      setNotifs(recent);
+    });
+  }, [filterGrade]);
+
+  if (notifs.length === 0) return null;
+
+  function dismiss(id) {
+    addDismissed(id);
+    setNotifs(prev => prev.filter(n => n.id !== id));
+  }
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:"8px", marginBottom:"20px" }}>
+      {notifs.map(n => (
+        <div key={n.id} style={{
+          display:"flex", alignItems:"center", gap:"12px",
+          background:"#eff6ff", border:"1px solid #bfdbfe",
+          borderLeft:"4px solid #3b82f6",
+          borderRadius:"10px", padding:"12px 16px",
+        }}>
+          <span style={{ fontSize:"1.3rem", flexShrink:0 }}>📅</span>
+          <div style={{ flex:1, minWidth:0 }}>
+            <span style={{ fontWeight:700, color:"#1e3a5f" }}>{n.teacherName}</span>
+            <span style={{ color:"#475569" }}> publicó una evaluación de </span>
+            <span style={{ fontWeight:700, color:"#1e40af" }}>{n.subject}</span>
+            {n.grade && <span style={{ color:"#475569" }}> para <strong>{n.grade}</strong></span>}
+            <span style={{ color:"#475569" }}>: </span>
+            <span style={{ fontStyle:"italic", color:"#1e293b" }}>{n.title}</span>
+            <span style={{ color:"#64748b", fontSize:"0.8rem" }}> — hasta {n.dateEnd}</span>
+          </div>
+          <button onClick={() => dismiss(n.id)} style={{
+            background:"none", border:"none", color:"#94a3b8", cursor:"pointer",
+            fontSize:"1.1rem", flexShrink:0, lineHeight:1, padding:"0 4px",
+          }} title="Descartar">✕</button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // ─── TopBar ───────────────────────────────────────────────────────
 export function TopBar({ profile, saving, logout, subtitle }) {

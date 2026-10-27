@@ -9,7 +9,7 @@ import {
   getObservationsByTeacher, createObservation, deleteObservation,
   getAttitudesByTeacher, saveAttitude, saveAttitudesBatch, deleteAttitude,
   ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS,
-  getUpcomingByTeacher, getUpcomingPastByTeacher, createUpcoming, deleteUpcoming,
+  getUpcomingByTeacher, getUpcomingPastByTeacher, createUpcoming, deleteUpcoming, updateUpcoming,
   getInternalObsByTeacher, createInternalObs, updateInternalObs, deleteInternalObs,
 } from "../db";
 
@@ -1139,33 +1139,60 @@ function TeacherRiskTab({ user, subjects }) {
 
 // PRÓXIMAS EVALUACIONES
 // ═══════════════════════════════════════════════════════════════════
+const UPCOMING_EMPTY_FORM = { title:"", type:"Examen", grade:"", dateStart:new Date().toISOString().split("T")[0], dateEnd:"", trimester:1, description:"" };
+
 function UpcomingTab({ user, profile, subject, setSaving }) {
-  const [vigentes, setVigentes] = useState([]); const [pasadas, setPasadas] = useState([]);
-  const [loadedVigentes, setLoadedVigentes] = useState(false); const [loadedPasadas, setLoadedPasadas] = useState(false);
+  const [vigentes, setVigentes] = useState([]);
+  const [pasadas, setPasadas] = useState([]);
+  const [loadedPasadas, setLoadedPasadas] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ title:"", type:"Examen", grade:"", dateStart:new Date().toISOString().split("T")[0], dateEnd:"", trimester:1, description:"" });
+  const [editingId, setEditingId] = useState(null); // null = crear, string = editar
+  const [form, setForm] = useState(UPCOMING_EMPTY_FORM);
   const [loading, setLoading] = useState(false);
+
   useEffect(() => { loadVigentes(); }, []);
-  async function loadVigentes() { setLoading(true); const r=await getUpcomingByTeacher(user.uid); setVigentes(r); setLoadedVigentes(true); setLoading(false); }
+  async function loadVigentes() { setLoading(true); const r=await getUpcomingByTeacher(user.uid); setVigentes(r); setLoading(false); }
   async function loadPasadas() { const r=await getUpcomingPastByTeacher(user.uid); setPasadas(r); setLoadedPasadas(true); }
+
+  function openNew() { setEditingId(null); setForm(UPCOMING_EMPTY_FORM); setShowForm(true); }
+  function openEdit(u) {
+    setEditingId(u.id);
+    setForm({ title:u.title||"", type:u.type||"Examen", grade:u.grade||"", dateStart:u.dateStart||new Date().toISOString().split("T")[0], dateEnd:u.dateEnd||"", trimester:u.trimester||1, description:u.description||"" });
+    setShowForm(true);
+  }
+  function cancelForm() { setShowForm(false); setEditingId(null); setForm(UPCOMING_EMPTY_FORM); }
+
   async function saveUpcoming() {
     if (!form.title||!form.dateEnd||!form.grade) { alert("Completá título, año y fecha de fin"); return; }
     setSaving(true);
-    const data={...form, teacherId:user.uid, teacherName:profile.name||"", subject};
-    const id=await createUpcoming(data);
-    setVigentes(prev=>[...prev,{id,...data}]);
-    setForm({title:"",type:"Examen",grade:"",dateStart:new Date().toISOString().split("T")[0],dateEnd:"",trimester:1,description:""});
-    setShowForm(false); setSaving(false);
+    const teacherName = profile.name || "";
+    if (editingId) {
+      await updateUpcoming(editingId, user.uid, { ...form });
+      setVigentes(prev => prev.map(u => u.id===editingId ? { ...u, ...form } : u));
+    } else {
+      const data = { ...form, teacherId:user.uid, teacherName, subject };
+      const id = await createUpcoming(data);
+      setVigentes(prev => [...prev, { id, ...data }]);
+    }
+    cancelForm();
+    setSaving(false);
   }
+
   async function removeUpcoming(id) { setSaving(true); await deleteUpcoming(id,user.uid); setVigentes(prev=>prev.filter(u=>u.id!==id)); setSaving(false); }
+
   return (
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px" }}>
         <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0 }}>Próximas evaluaciones</h2>
-        <button className="btn-primary" onClick={()=>setShowForm(!showForm)}>{showForm?"Cancelar":"+ Publicar evaluación"}</button>
+        {!showForm && <button className="btn-primary" onClick={openNew}>+ Publicar evaluación</button>}
       </div>
+
       {showForm && (
         <div className="card fade" style={{ padding:"24px", marginBottom:"20px", border:"2px solid #e0e7ff" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" }}>
+            <h3 style={{ margin:0, color:"#1e3a5f", fontSize:"1rem" }}>{editingId ? "✏️ Editar evaluación" : "Nueva evaluación"}</h3>
+            <button onClick={cancelForm} style={{ background:"none", border:"none", color:"#94a3b8", cursor:"pointer", fontSize:"1.2rem" }}>✕</button>
+          </div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"16px" }}>
             <div><label>Título</label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="Ej: Parcial Unidad 3" /></div>
             <div><label>Tipo</label><select value={form.type} onChange={e=>setForm({...form,type:e.target.value})}>{["Examen","Trabajo Práctico","Exposición","Proyecto","Parcial","Otro"].map(t=><option key={t} value={t}>{t}</option>)}</select></div>
@@ -1175,28 +1202,40 @@ function UpcomingTab({ user, profile, subject, setSaving }) {
             <div><label>Fecha límite</label><input type="date" value={form.dateEnd} onChange={e=>setForm({...form,dateEnd:e.target.value})} /></div>
             <div style={{ gridColumn:"1/-1" }}><label>Descripción (opcional)</label><textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})} rows={2} style={{ width:"100%", border:"1.5px solid #cbd5e1", borderRadius:"10px", padding:"10px 14px", fontSize:"0.9rem", fontFamily:"inherit" }} /></div>
           </div>
-          <button className="btn-primary" onClick={saveUpcoming} style={{ marginTop:"16px" }}>Publicar evaluación</button>
+          <div style={{ display:"flex", gap:"10px", marginTop:"16px" }}>
+            <button className="btn-primary" onClick={saveUpcoming}>{editingId ? "Guardar cambios" : "Publicar evaluación"}</button>
+            <button onClick={cancelForm} style={{ padding:"10px 20px", borderRadius:"10px", border:"1px solid #e2e8f0", background:"white", color:"#64748b", cursor:"pointer", fontWeight:600 }}>Cancelar</button>
+          </div>
         </div>
       )}
-      {loading?<div style={{ textAlign:"center",padding:"40px",color:"#94a3b8" }}>Cargando...</div>:(
+
+      {loading ? <div style={{ textAlign:"center",padding:"40px",color:"#94a3b8" }}>Cargando...</div> : (
         <>
-          {vigentes.length===0?<div className="card" style={{ padding:"32px",textAlign:"center",color:"#94a3b8" }}><p>No hay evaluaciones vigentes publicadas</p></div>:(
+          {vigentes.length===0 ? (
+            <div className="card" style={{ padding:"32px",textAlign:"center",color:"#94a3b8" }}><p>No hay evaluaciones vigentes publicadas</p></div>
+          ) : (
             <div style={{ display:"flex",flexDirection:"column",gap:"10px" }}>
-              {vigentes.map(u=>(
-                <div key={u.id} className="card" style={{ padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+              {vigentes.map(u => (
+                <div key={u.id} className="card" style={{ padding:"16px 20px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                   <div>
                     <div style={{ fontWeight:700,color:"#1e293b" }}>{u.title}</div>
                     <div style={{ fontSize:"0.82rem",color:"#64748b" }}>{u.subject} · {u.grade} · {trimNames[u.trimester-1]}</div>
                     <div style={{ fontSize:"0.78rem",color:"#94a3b8",marginTop:"2px" }}>hasta {u.dateEnd}</div>
+                    {u.description && <div style={{ fontSize:"0.8rem",color:"#475569",marginTop:"4px" }}>{u.description}</div>}
                   </div>
-                  <button className="btn-danger" onClick={()=>removeUpcoming(u.id)}>Eliminar</button>
+                  <div style={{ display:"flex", gap:"8px", flexShrink:0 }}>
+                    <button onClick={()=>openEdit(u)} style={{ padding:"6px 14px", borderRadius:"8px", background:"#dbeafe", color:"#1e40af", border:"none", cursor:"pointer", fontSize:"0.82rem", fontWeight:600 }}>✏️ Editar</button>
+                    <button className="btn-danger" onClick={()=>removeUpcoming(u.id)}>Eliminar</button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
           <div style={{ marginTop:"20px",textAlign:"center" }}>
-            {!loadedPasadas?<button onClick={loadPasadas} style={{ background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:"0.85rem",textDecoration:"underline" }}>Ver evaluaciones pasadas</button>:(
-              pasadas.length>0&&<div style={{ display:"flex",flexDirection:"column",gap:"8px",marginTop:"8px" }}>{pasadas.map(u=><div key={u.id} className="card" style={{ padding:"12px 16px",opacity:0.6,fontSize:"0.85rem" }}><span style={{ fontWeight:600 }}>{u.title}</span> · {u.grade} · hasta {u.dateEnd}</div>)}</div>
+            {!loadedPasadas ? (
+              <button onClick={loadPasadas} style={{ background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:"0.85rem",textDecoration:"underline" }}>Ver evaluaciones pasadas</button>
+            ) : (
+              pasadas.length>0 && <div style={{ display:"flex",flexDirection:"column",gap:"8px",marginTop:"8px" }}>{pasadas.map(u=><div key={u.id} className="card" style={{ padding:"12px 16px",opacity:0.6,fontSize:"0.85rem" }}><span style={{ fontWeight:600 }}>{u.title}</span> · {u.grade} · hasta {u.dateEnd}</div>)}</div>
             )}
           </div>
         </>
