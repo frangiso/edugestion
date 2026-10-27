@@ -560,6 +560,17 @@ export function CourseObservationsTab({ user, profile }) {
 // Usado en TeacherScreen y AdminScreen
 const SUBJECT_GRADES_LIST = ["1°","2°","3°","4°","5°","6°"];
 
+// Determina el trimestre activo según el calendario escolar
+function getCurrentTrimester() {
+  const now = new Date();
+  const m = now.getMonth() + 1;
+  const d = now.getDate();
+  if ((m === 2 && d >= 25) || m === 3 || m === 4 || (m === 5 && d <= 27)) return 1;
+  if ((m === 5 && d >= 28) || m === 6 || m === 7 || m === 8 || (m === 9 && d <= 15)) return 2;
+  if ((m === 9 && d >= 16) || m === 10 || m === 11 || (m === 12 && d <= 18)) return 3;
+  return 1;
+}
+
 export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
   const allSubjects = (() => {
     if (subjects && subjects.length > 0) return subjects;
@@ -590,23 +601,25 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
           return scores.length ? parseFloat((scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(2)) : null;
         });
 
-        // El último trimestre con notas está "en curso" — el alumno puede aún mejorarlo
-        const lastIdx = t.reduce((last, v, i) => v !== null ? i : last, -1);
-        // Trimestres anteriores al en-curso: ya están cerrados
-        const lockedAvgs = lastIdx > 0 ? t.slice(0, lastIdx).filter(v => v !== null) : [];
+        // El trimestre activo lo determina el calendario escolar, no las notas cargadas.
+        // Así un alumno sin T3 cargado no queda atado al T2 ya cerrado.
+        const currentTrimNum = getCurrentTrimester(); // 1, 2 o 3
+        const currentIdx = currentTrimNum - 1; // 0-indexed
+        // Trimestres anteriores al activo: ya cerrados por el calendario
+        const lockedAvgs = t.slice(0, currentIdx).filter(v => v !== null);
         const sumLocked = lockedAvgs.reduce((a,b)=>a+b,0);
-        const remainingCount = lastIdx >= 0 ? 3 - lastIdx : 0;
-        const inProgressTrim = lastIdx >= 0 ? lastIdx + 1 : null; // 1-indexed
+        const remainingCount = 3 - currentIdx; // trimestres restantes (en curso + futuros)
+        const inProgressTrim = currentTrimNum; // 1-indexed
 
         // canRecover: null = va bien o sin datos, false = imposible, true = puede lograrlo con esfuerzo
         let neededAvg = null;
         let canRecover = null;
 
         // Regla institucional: T3 no puede ser < 7 aunque el promedio anual alcance
-        const t3InProgress = lastIdx === 2;
+        const t3InProgress = currentTrimNum === 3;
         let t3RuleApplies = false;
 
-        if (lastIdx >= 0 && remainingCount > 0) {
+        if (remainingCount > 0) {
           const neededForAnnual = parseFloat(((21 - sumLocked) / remainingCount).toFixed(1));
           // Si T3 está en curso, el piso mínimo es 7 (independiente del promedio anual)
           const effectiveNeeded = t3InProgress ? Math.max(neededForAnnual, 7) : neededForAnnual;
@@ -614,10 +627,13 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
           t3RuleApplies = t3InProgress && effectiveNeeded > neededForAnnual; // T3 es el cuello de botella
           if (effectiveNeeded > 10) {
             canRecover = false;
-          } else if (t[lastIdx] >= effectiveNeeded) {
-            canRecover = null; // ya alcanzó lo que necesita en el trimestre en curso
           } else {
-            canRecover = true;
+            const currentTrimAvg = t[currentIdx]; // null si aún no tiene nota en el trim activo
+            if (currentTrimAvg !== null && currentTrimAvg >= effectiveNeeded) {
+              canRecover = null; // ya alcanzó lo que necesita en el trimestre en curso
+            } else {
+              canRecover = true; // necesita mejorar (o aún sin nota en el trim activo)
+            }
           }
         }
 
