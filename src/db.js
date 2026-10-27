@@ -734,8 +734,9 @@ export async function getUpcomingFiltered({ grade="", subject="" }={}) {
 }
 
 export async function createUpcoming(data) {
-  const ref = await addDoc(collection(db,"upcoming"), { ...data, createdAt: serverTimestamp() });
-  const newItem = { id:ref.id, ...data };
+  const withDate = { ...data, publishedAt: today(), createdAt: serverTimestamp() };
+  const ref = await addDoc(collection(db,"upcoming"), withDate);
+  const newItem = { id:ref.id, ...withDate };
   const key = `${data.teacherId}_vigentes`;
   if (cache.upcomingByTeacher[key]) cache.upcomingByTeacher[key] = [...cache.upcomingByTeacher[key], newItem].sort((a,b)=>a.dateEnd.localeCompare(b.dateEnd));
   cache.upcomingFiltered = {};
@@ -778,33 +779,12 @@ export async function deleteAnnouncement(id) {
 }
 
 export async function updateUpcoming(id, teacherId, data) {
-  await updateDoc(doc(db,"upcoming",id), data);
+  const withDate = { ...data, publishedAt: today() };
+  await updateDoc(doc(db,"upcoming",id), withDate);
   const vk=`${teacherId}_vigentes`, pk=`${teacherId}_pasadas`;
-  if (cache.upcomingByTeacher[vk]) cache.upcomingByTeacher[vk]=cache.upcomingByTeacher[vk].map(u=>u.id===id?{...u,...data}:u);
-  if (cache.upcomingPastByTeacher[pk]) cache.upcomingPastByTeacher[pk]=cache.upcomingPastByTeacher[pk].map(u=>u.id===id?{...u,...data}:u);
+  if (cache.upcomingByTeacher[vk]) cache.upcomingByTeacher[vk]=cache.upcomingByTeacher[vk].map(u=>u.id===id?{...u,...withDate}:u);
+  if (cache.upcomingPastByTeacher[pk]) cache.upcomingPastByTeacher[pk]=cache.upcomingPastByTeacher[pk].map(u=>u.id===id?{...u,...withDate}:u);
   cache.upcomingFiltered = {};
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// NOTIFICACIONES DE EVALUACIONES
-// Colección: eval_notifications
-// ═══════════════════════════════════════════════════════════════════
-let evalNotifsCache = null;
-
-export async function createEvalNotification({ teacherName, subject, grade, evalTitle, dateEnd, action }) {
-  const data = { teacherName, subject, grade, evalTitle, dateEnd, action, date: today(), createdAt: serverTimestamp() };
-  const ref = await addDoc(collection(db, "eval_notifications"), data);
-  evalNotifsCache = null; // invalidar cache
-  return ref.id;
-}
-
-export async function getEvalNotifications() {
-  if (evalNotifsCache) return evalNotifsCache;
-  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
-  const cutoffStr = cutoff.toISOString().split("T")[0];
-  const snap = await getDocs(query(collection(db, "eval_notifications"), where("date", ">=", cutoffStr), orderBy("date", "desc")));
-  evalNotifsCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  return evalNotifsCache;
 }
 
 // ═══════════════════════════════════════════════════════════════════

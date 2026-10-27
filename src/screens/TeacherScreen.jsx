@@ -10,7 +10,6 @@ import {
   getAttitudesByTeacher, saveAttitude, saveAttitudesBatch, deleteAttitude,
   ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS,
   getUpcomingByTeacher, getUpcomingPastByTeacher, createUpcoming, deleteUpcoming, updateUpcoming,
-  createEvalNotification,
   getInternalObsByTeacher, createInternalObs, updateInternalObs, deleteInternalObs,
 } from "../db";
 
@@ -1170,12 +1169,10 @@ function UpcomingTab({ user, profile, subject, setSaving }) {
     if (editingId) {
       await updateUpcoming(editingId, user.uid, { ...form });
       setVigentes(prev => prev.map(u => u.id===editingId ? { ...u, ...form } : u));
-      await createEvalNotification({ teacherName, subject, grade:form.grade, evalTitle:form.title, dateEnd:form.dateEnd, action:"actualizó" });
     } else {
       const data = { ...form, teacherId:user.uid, teacherName, subject };
       const id = await createUpcoming(data);
       setVigentes(prev => [...prev, { id, ...data }]);
-      await createEvalNotification({ teacherName, subject, grade:form.grade, evalTitle:form.title, dateEnd:form.dateEnd, action:"publicó" });
     }
     cancelForm();
     setSaving(false);

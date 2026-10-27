@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import {
   getAllStudents, getAllGrades,
   getCourseObservations, createCourseObservation, deleteCourseObservation,
-  getEvalNotifications,
+  getUpcomingFiltered,
 } from "./db";
 
 // ─── Helpers globales ─────────────────────────────────────────────
@@ -43,45 +43,46 @@ function addDismissed(id) {
 
 export function EvalNotificationBanner({ filterGrade }) {
   const [notifs, setNotifs] = useState([]);
-  const [dismissed, setDismissed] = useState(() => getDismissed());
 
   useEffect(() => {
-    getEvalNotifications().then(list => {
-      const d = getDismissed();
-      setNotifs(list.filter(n => !d.has(n.id)));
+    // Cutoff: últimos 7 días
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
+    const cutoffStr = cutoff.toISOString().split("T")[0];
+    const d = getDismissed();
+    // Reutiliza la cache de upcoming (0 lecturas extra si ya fue cargado)
+    getUpcomingFiltered({}).then(items => {
+      const recent = items.filter(u =>
+        (u.publishedAt || "") >= cutoffStr && !d.has(u.id) &&
+        (!filterGrade || !u.grade || u.grade === "" || u.grade === filterGrade)
+      );
+      setNotifs(recent);
     });
-  }, []);
+  }, [filterGrade]);
 
-  const visible = filterGrade
-    ? notifs.filter(n => !n.grade || n.grade === "" || n.grade === filterGrade)
-    : notifs;
-
-  if (visible.length === 0) return null;
+  if (notifs.length === 0) return null;
 
   function dismiss(id) {
     addDismissed(id);
-    setDismissed(prev => { const s = new Set(prev); s.add(id); return s; });
     setNotifs(prev => prev.filter(n => n.id !== id));
   }
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:"8px", marginBottom:"20px" }}>
-      {visible.map(n => (
+      {notifs.map(n => (
         <div key={n.id} style={{
           display:"flex", alignItems:"center", gap:"12px",
           background:"#eff6ff", border:"1px solid #bfdbfe",
           borderLeft:"4px solid #3b82f6",
           borderRadius:"10px", padding:"12px 16px",
-          animation:"slideDown 0.3s ease",
         }}>
           <span style={{ fontSize:"1.3rem", flexShrink:0 }}>📅</span>
           <div style={{ flex:1, minWidth:0 }}>
             <span style={{ fontWeight:700, color:"#1e3a5f" }}>{n.teacherName}</span>
-            <span style={{ color:"#475569" }}> {n.action} una evaluación de </span>
+            <span style={{ color:"#475569" }}> publicó una evaluación de </span>
             <span style={{ fontWeight:700, color:"#1e40af" }}>{n.subject}</span>
             {n.grade && <span style={{ color:"#475569" }}> para <strong>{n.grade}</strong></span>}
             <span style={{ color:"#475569" }}>: </span>
-            <span style={{ fontStyle:"italic", color:"#1e293b" }}>{n.evalTitle}</span>
+            <span style={{ fontStyle:"italic", color:"#1e293b" }}>{n.title}</span>
             <span style={{ color:"#64748b", fontSize:"0.8rem" }}> — hasta {n.dateEnd}</span>
           </div>
           <button onClick={() => dismiss(n.id)} style={{
