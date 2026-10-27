@@ -602,12 +602,19 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
         let neededAvg = null;
         let canRecover = null;
 
+        // Regla institucional: T3 no puede ser < 7 aunque el promedio anual alcance
+        const t3InProgress = lastIdx === 2;
+        let t3RuleApplies = false;
+
         if (lastIdx >= 0 && remainingCount > 0) {
-          const needed = parseFloat(((21 - sumLocked) / remainingCount).toFixed(1));
-          neededAvg = needed;
-          if (needed > 10) {
+          const neededForAnnual = parseFloat(((21 - sumLocked) / remainingCount).toFixed(1));
+          // Si T3 está en curso, el piso mínimo es 7 (independiente del promedio anual)
+          const effectiveNeeded = t3InProgress ? Math.max(neededForAnnual, 7) : neededForAnnual;
+          neededAvg = effectiveNeeded;
+          t3RuleApplies = t3InProgress && effectiveNeeded > neededForAnnual; // T3 es el cuello de botella
+          if (effectiveNeeded > 10) {
             canRecover = false;
-          } else if (t[lastIdx] >= needed) {
+          } else if (t[lastIdx] >= effectiveNeeded) {
             canRecover = null; // ya alcanzó lo que necesita en el trimestre en curso
           } else {
             canRecover = true;
@@ -619,7 +626,7 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
           ? parseFloat((validT.reduce((a,b)=>a+b,0)/validT.length).toFixed(2))
           : null;
 
-        return { ...s, t, average, neededAvg, canRecover, inProgressTrim, count: s.entries.length };
+        return { ...s, t, average, neededAvg, canRecover, inProgressTrim, t3RuleApplies, count: s.entries.length };
       })
       .filter(s => s.average !== null && s.canRecover !== null && s.t[0] !== null)
       .sort((a,b) => {
@@ -666,6 +673,7 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
             background:"#fffbeb", border:"1px solid #fcd34d",
             fontSize:"0.76rem", fontWeight:700, color:"#92400e" }}>
             ⚠️ Necesita promedio {s.neededAvg} en T{s.inProgressTrim} para aprobar
+            {s.t3RuleApplies && <span style={{ fontWeight:400, color:"#b45309" }}> — T3 no puede ser menor a 7 aunque el promedio anual alcance</span>}
           </div>
         )}
         {s.canRecover === false && (
