@@ -1483,10 +1483,16 @@ function StudentGradesTab({ user, subject, subjects, setSaving }) {
                   {/* Resumen global */}
                   <div className="card" style={{ padding:"16px 24px", marginBottom:"20px", display:"flex", gap:"24px", flexWrap:"wrap", alignItems:"center" }}>
                     <div style={{ textAlign:"center" }}>
-                      <div style={{ fontSize:"2rem", fontWeight:800, color: avg(myGrades.map(g=>g.score))==="–"?"#94a3b8":scoreColor(parseFloat(avg(myGrades.map(g=>g.score)))), fontFamily:"'Playfair Display',serif" }}>
-                        {avg(myGrades.map(g => g.score))}
-                      </div>
-                      <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>Promedio general</div>
+                      {(() => {
+                        const trimAvgs = [1,2,3].map(t => byTrim[t].length > 0 ? parseFloat(avg(byTrim[t].map(g=>g.score))) : null).filter(v=>v!==null);
+                        const generalAvgVal = trimAvgs.length > 0 ? avg(trimAvgs) : "–";
+                        return <>
+                          <div style={{ fontSize:"2rem", fontWeight:800, color: generalAvgVal==="–"?"#94a3b8":scoreColor(parseFloat(generalAvgVal)), fontFamily:"'Playfair Display',serif" }}>
+                            {generalAvgVal}
+                          </div>
+                          <div style={{ fontSize:"0.72rem", color:"#94a3b8", textTransform:"uppercase" }}>Promedio anual</div>
+                        </>;
+                      })()}
                     </div>
                     <div style={{ textAlign:"center" }}>
                       <div style={{ fontSize:"2rem", fontWeight:800, color:"#1e3a5f", fontFamily:"'Playfair Display',serif" }}>{myGrades.length}</div>
@@ -1594,10 +1600,14 @@ function BulkAveragesView({ user, subject, allTeacherGrades, loadingAll, ensureT
 
   function generalAvg(studentId) {
     if (!allTeacherGrades) return "–";
-    const gs = allTeacherGrades.filter(
-      g => g.studentId === studentId && g.subject === subject
-    );
-    return gs.length > 0 ? avg(gs.map(g => g.score)) : "–";
+    // Promedio anual = promedio de los promedios por trimestre (cada trim vale 1/3)
+    const trimAvgs = [1, 2, 3].map(trim => {
+      const gs = allTeacherGrades.filter(
+        g => g.studentId === studentId && g.subject === subject && g.trimester === trim
+      );
+      return gs.length > 0 ? parseFloat(avg(gs.map(g => g.score))) : null;
+    }).filter(v => v !== null);
+    return trimAvgs.length > 0 ? avg(trimAvgs) : "–";
   }
 
   const isLoading = loadingAll || loadingStudents;
