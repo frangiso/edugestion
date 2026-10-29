@@ -41,6 +41,8 @@ function addDismissed(id) {
   } catch {}
 }
 
+const AUTO_DISMISS_MS = 10_000;
+
 export function EvalNotificationBanner({ filterGrade }) {
   const [notifs, setNotifs] = useState([]);
 
@@ -58,6 +60,16 @@ export function EvalNotificationBanner({ filterGrade }) {
       setNotifs(recent);
     });
   }, [filterGrade]);
+
+  // Auto-descarte a los 10 segundos
+  useEffect(() => {
+    if (notifs.length === 0) return;
+    const timer = setTimeout(() => {
+      notifs.forEach(n => addDismissed(n.id));
+      setNotifs([]);
+    }, AUTO_DISMISS_MS);
+    return () => clearTimeout(timer);
+  }, [notifs]);
 
   if (notifs.length === 0) return null;
 
