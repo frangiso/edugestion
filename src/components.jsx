@@ -25,6 +25,8 @@ export const scoreColor = (s) => {
 
 export const trimNames = ["1er Trimestre", "2do Trimestre", "3er Trimestre"];
 
+const ALL_GRADES = ["1°","2°","3°","4°","5°","6°"];
+
 // ─── Banners de notificación de nuevas evaluaciones ──────────────
 // Se muestra al director y tutores cuando un profesor publica/edita una eval.
 // Se descarta por cada usuario usando localStorage.
