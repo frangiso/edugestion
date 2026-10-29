@@ -579,6 +579,11 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
 
   const [selectedSubject, setSelectedSubject] = useState(defaultSubject || allSubjects[0] || "");
   const [gradeFilter, setGradeFilter] = useState("");
+  const [activeIds, setActiveIds] = useState(null); // null = cargando
+
+  useEffect(() => {
+    getAllStudents().then(list => setActiveIds(new Set(list.map(s => s.id))));
+  }, []);
 
   const subjectGrades = selectedSubject
     ? grades.filter(g => g.subject === selectedSubject)
@@ -587,6 +592,8 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
   const students = (() => {
     const map = {};
     subjectGrades.forEach(g => {
+      // Omitir alumnos dados de baja (no están en la lista activa)
+      if (activeIds && !activeIds.has(g.studentId)) return;
       if (!map[g.studentId]) {
         map[g.studentId] = { id: g.studentId, name: g.studentName || "–", grade: g.studentGrade || "", entries: [] };
       }
