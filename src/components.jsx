@@ -145,36 +145,83 @@ export const GLOBAL_STYLES = `
   .fade { animation: fadeIn 0.3s ease; }
 `;
 
-// ─── TOP 6 — Mejores promedios 6° Año ──────────────────────────────
+// ─── TOP 6 — Mejores promedios para la bandera ──────────────────────
 // Compartido entre AdminScreen (director) y TeacherScreen (docente)
-const TOP6_GRADE = "6°";
-const ALL_GRADES = ["1°","2°","3°","4°","5°","6°"];
+
+function computeTop6(students, grades, grade) {
+  return students
+    .filter(s => s.grade === grade)
+    .map(s => {
+      const sGrades = grades.filter(g => g.studentId === s.id);
+      const byTrim = [1,2,3].map(t => sGrades.filter(g => g.trimester === t).map(g => g.score));
+      // Promedio anual = promedio de los promedios trimestrales (cada trimestre vale 1/3)
+      const trimAvgs = byTrim.map(scores => scores.length ? parseFloat(avg(scores)) : null).filter(v => v !== null);
+      const finalVal = trimAvgs.length ? avg(trimAvgs) : "–";
+      const finalNum = trimAvgs.length ? parseFloat(finalVal) : null;
+      return { id: s.id, name: s.name, t: byTrim.map(scores => avg(scores)), final: finalVal, finalNum };
+    })
+    .filter(r => r.finalNum !== null)
+    .sort((a,b) => b.finalNum - a.finalNum)
+    .slice(0, 6);
+}
+
+function Top6Table({ rows, grade }) {
+  if (rows.length === 0) {
+    return (
+      <div className="card" style={{ padding:"32px", textAlign:"center", color:"#94a3b8", marginBottom:"24px" }}>
+        <div style={{ fontSize:"2.5rem" }}>📭</div>
+        <p style={{ margin:"8px 0 0" }}>Sin evaluaciones cargadas para {grade} año.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="card" style={{ overflow:"auto", marginBottom:"28px" }}>
+      <table style={{ width:"100%", borderCollapse:"collapse", minWidth:"560px" }}>
+        <thead>
+          <tr style={{ background:"#1e3a5f", color:"white" }}>
+            <th style={{ padding:"12px 16px", textAlign:"left", fontWeight:600, fontSize:"0.85rem" }}>#</th>
+            <th style={{ padding:"12px 16px", textAlign:"left", fontWeight:600, fontSize:"0.85rem" }}>Alumno</th>
+            {trimNames.map((n,i) => (
+              <th key={i} style={{ padding:"12px 16px", textAlign:"center", fontWeight:600, fontSize:"0.85rem" }}>{n}</th>
+            ))}
+            <th style={{ padding:"12px 16px", textAlign:"center", fontWeight:600, fontSize:"0.85rem" }}>Prom. Anual</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, idx) => (
+            <tr key={r.id} style={{ borderBottom:"1px solid #f1f5f9", background: idx%2===0?"white":"#f8fafc" }}>
+              <td style={{ padding:"12px 16px", fontWeight:800, color: idx===0?"#d97706":"#94a3b8" }}>
+                {idx === 0 ? "🏅" : `${idx+1}°`}
+              </td>
+              <td style={{ padding:"12px 16px", fontWeight:600, color:"#1e293b" }}>{r.name}</td>
+              {r.t.map((v,i) => (
+                <td key={i} style={{ padding:"12px 16px", textAlign:"center" }}>
+                  <span style={{ fontWeight:700, color: v==="–"?"#cbd5e1":scoreColor(parseFloat(v)) }}>{v}</span>
+                </td>
+              ))}
+              <td style={{ padding:"12px 16px", textAlign:"center" }}>
+                <span style={{ fontWeight:800, fontSize:"1.1rem", color:scoreColor(r.finalNum), fontFamily:"'Playfair Display',serif" }}>{r.final}</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export function Top6Tab() {
   const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState([]);
+  const [rows5, setRows5] = useState([]);
+  const [rows6, setRows6] = useState([]);
 
   useEffect(() => { loadRanking(); }, []);
 
   async function loadRanking() {
     setLoading(true);
     const [students, grades] = await Promise.all([getAllStudents(), getAllGrades()]);
-    const courseStudents = students.filter(s => s.grade === TOP6_GRADE);
-    const computed = courseStudents.map(s => {
-      const sGrades = grades.filter(g => g.studentId === s.id);
-      const byTrim = [1,2,3].map(t => sGrades.filter(g => g.trimester === t).map(g => g.score));
-      const all = sGrades.map(g => g.score);
-      return {
-        id: s.id,
-        name: s.name,
-        t: byTrim.map(scores => avg(scores)),
-        final: avg(all),
-        finalNum: all.length ? parseFloat(avg(all)) : null,
-      };
-    }).filter(r => r.finalNum !== null)
-      .sort((a,b) => b.finalNum - a.finalNum)
-      .slice(0,6);
-    setRows(computed);
+    setRows6(computeTop6(students, grades, "6°"));
+    setRows5(computeTop6(students, grades, "5°"));
     setLoading(false);
   }
 
@@ -182,51 +229,16 @@ export function Top6Tab() {
 
   return (
     <div>
-      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 8px" }}>🏆 Mejores promedios — 6° Año</h2>
-      <p style={{ color:"#64748b", fontSize:"0.9rem", marginBottom:"24px" }}>
-        Top 6 alumnos de 6° año según su promedio final (todas las materias), con el detalle por trimestre.
+      <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 4px" }}>🏆 Mejores promedios — para la bandera</h2>
+      <p style={{ color:"#64748b", fontSize:"0.9rem", marginBottom:"28px" }}>
+        Top 6 de 5° y 6° año según promedio anual (T1+T2+T3)/3 en todas las materias.
       </p>
 
-      {rows.length === 0 ? (
-        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8", marginBottom:"32px" }}>
-          <div style={{ fontSize:"3rem" }}>📭</div>
-          <p>Todavía no hay evaluaciones cargadas para 6° año.</p>
-        </div>
-      ) : (
-        <div className="card" style={{ overflow:"auto", marginBottom:"32px" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse", minWidth:"560px" }}>
-            <thead>
-              <tr style={{ background:"#1e3a5f", color:"white" }}>
-                <th style={{ padding:"12px 16px", textAlign:"left", fontWeight:600, fontSize:"0.85rem" }}>#</th>
-                <th style={{ padding:"12px 16px", textAlign:"left", fontWeight:600, fontSize:"0.85rem" }}>Alumno</th>
-                {trimNames.map((n,i) => (
-                  <th key={i} style={{ padding:"12px 16px", textAlign:"center", fontWeight:600, fontSize:"0.85rem" }}>{n}</th>
-                ))}
-                <th style={{ padding:"12px 16px", textAlign:"center", fontWeight:600, fontSize:"0.85rem" }}>Promedio Final</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, idx) => (
-                <tr key={r.id} style={{ borderBottom:"1px solid #f1f5f9", background: idx%2===0?"white":"#f8fafc" }}>
-                  <td style={{ padding:"12px 16px", fontWeight:800, color:"#94a3b8" }}>{idx+1}°</td>
-                  <td style={{ padding:"12px 16px", fontWeight:600, color:"#1e293b" }}>{r.name}</td>
-                  {r.t.map((v,i) => {
-                    const vNum = parseFloat(v);
-                    return (
-                      <td key={i} style={{ padding:"12px 16px", textAlign:"center" }}>
-                        <span style={{ fontWeight:700, color: v==="–"?"#cbd5e1":scoreColor(vNum) }}>{v}</span>
-                      </td>
-                    );
-                  })}
-                  <td style={{ padding:"12px 16px", textAlign:"center" }}>
-                    <span style={{ fontWeight:800, fontSize:"1.1rem", color:scoreColor(r.finalNum), fontFamily:"'Playfair Display',serif" }}>{r.final}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 12px", fontSize:"1.1rem" }}>🎓 6° Año</h3>
+      <Top6Table rows={rows6} grade="6°" />
+
+      <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 12px", fontSize:"1.1rem" }}>📚 5° Año</h3>
+      <Top6Table rows={rows5} grade="5°" />
     </div>
   );
 }
