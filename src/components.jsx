@@ -717,23 +717,34 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
             );
           })}
         </div>
-        {s.canRecover === true && s.neededAvg !== null && (
-          <div style={{ marginTop:"8px", padding:"5px 10px", borderRadius:"8px",
-            background:"#fffbeb", border:"1px solid #fcd34d",
-            fontSize:"0.76rem", fontWeight:700, color:"#92400e" }}>
-            ⚠️ Necesita promedio {s.neededAvg} en T{s.inProgressTrim} para aprobar
-            {s.t3RuleApplies && <span style={{ fontWeight:400, color:"#b45309" }}> — T3 no puede ser menor a 7 aunque el promedio anual alcance</span>}
-          </div>
-        )}
-        {s.canRecover === false && (
-          <div style={{ marginTop:"8px", padding:"5px 10px", borderRadius:"8px",
-            background:"#fef2f2", border:"1px solid #fca5a5",
-            fontSize:"0.76rem", fontWeight:700, color:"#dc2626" }}>
-            {s.neededAvg !== null
-              ? `❌ No puede recuperarse — necesitaría ${s.neededAvg} en T${s.inProgressTrim}`
-              : "❌ Los trimestres cerraron con promedio insuficiente"}
-          </div>
-        )}
+        {s.canRecover === true && s.neededAvg !== null && (() => {
+          const partialAvg = s.t[s.inProgressTrim - 1];
+          return (
+            <div style={{ marginTop:"8px", padding:"5px 10px", borderRadius:"8px",
+              background:"#fffbeb", border:"1px solid #fcd34d",
+              fontSize:"0.76rem", fontWeight:700, color:"#92400e" }}>
+              {partialAvg !== null
+                ? <>⚠️ Tiene <span style={{ color:"#b45309" }}>{partialAvg}</span> de promedio parcial en T{s.inProgressTrim} — necesita llegar a <span style={{ color:"#92400e" }}>{s.neededAvg}</span> para aprobar</>
+                : <>⚠️ Necesita promedio {s.neededAvg} en T{s.inProgressTrim} para aprobar</>
+              }
+              {s.t3RuleApplies && <span style={{ fontWeight:400, color:"#b45309" }}> — T3 no puede ser menor a 7 aunque el promedio anual alcance</span>}
+            </div>
+          );
+        })()}
+        {s.canRecover === false && (() => {
+          const partialAvg = s.t[s.inProgressTrim - 1];
+          return (
+            <div style={{ marginTop:"8px", padding:"5px 10px", borderRadius:"8px",
+              background:"#fef2f2", border:"1px solid #fca5a5",
+              fontSize:"0.76rem", fontWeight:700, color:"#dc2626" }}>
+              {s.neededAvg !== null
+                ? partialAvg !== null
+                  ? `❌ No puede recuperarse — tiene ${partialAvg} parcial en T${s.inProgressTrim}, necesitaría ${s.neededAvg}`
+                  : `❌ No puede recuperarse — necesitaría ${s.neededAvg} en T${s.inProgressTrim}`
+                : "❌ Los trimestres cerraron con promedio insuficiente"}
+            </div>
+          );
+        })()}
       </div>
     );
   }
