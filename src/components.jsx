@@ -719,15 +719,52 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
         </div>
         {s.canRecover === true && s.neededAvg !== null && (() => {
           const partialAvg = s.t[s.inProgressTrim - 1];
+          const trimScores = (s.entries || []).filter(g => g.trimester === s.inProgressTrim).map(g => g.score);
+          const n = trimScores.length;
+          const sumScores = trimScores.reduce((a,b)=>a+b,0);
+
+          // Proyección: ¿qué nota necesita en k pruebas más?
+          let projections = [];
+          if (n > 0) {
+            for (let k = 1; k <= 6; k++) {
+              const needed = parseFloat(((s.neededAvg * (n + k) - sumScores) / k).toFixed(1));
+              projections.push({ k, needed, feasible: needed <= 10 && needed >= 1 });
+              if (projections.filter(p=>p.feasible).length >= 3) break;
+            }
+            // Mostrar: último imposible (si lo hay) + hasta 3 factibles
+            const firstFeasibleIdx = projections.findIndex(p=>p.feasible);
+            let shown = [];
+            if (firstFeasibleIdx > 0) shown.push(projections[firstFeasibleIdx - 1]);
+            else if (firstFeasibleIdx === -1 && projections.length > 0) shown = projections.slice(-2);
+            shown = shown.concat(projections.filter(p=>p.feasible)).slice(0,4);
+            projections = shown;
+          }
+
           return (
-            <div style={{ marginTop:"8px", padding:"5px 10px", borderRadius:"8px",
+            <div style={{ marginTop:"8px", padding:"8px 10px", borderRadius:"8px",
               background:"#fffbeb", border:"1px solid #fcd34d",
-              fontSize:"0.76rem", fontWeight:700, color:"#92400e" }}>
-              {partialAvg !== null
-                ? <>⚠️ Tiene <span style={{ color:"#b45309" }}>{partialAvg}</span> de promedio parcial en T{s.inProgressTrim} — necesita llegar a <span style={{ color:"#92400e" }}>{s.neededAvg}</span> para aprobar</>
-                : <>⚠️ Necesita promedio {s.neededAvg} en T{s.inProgressTrim} para aprobar</>
-              }
-              {s.t3RuleApplies && <span style={{ fontWeight:400, color:"#b45309" }}> — T3 no puede ser menor a 7 aunque el promedio anual alcance</span>}
+              fontSize:"0.76rem", color:"#92400e" }}>
+              <div style={{ fontWeight:700, marginBottom: n > 0 ? "6px" : 0 }}>
+                {partialAvg !== null
+                  ? <>⚠️ Tiene <span style={{ color:"#b45309" }}>{partialAvg}</span> parcial en T{s.inProgressTrim} ({n} eval.) — necesita llegar a <span style={{ color:"#92400e" }}>{s.neededAvg}</span></>
+                  : <>⚠️ Necesita promedio {s.neededAvg} en T{s.inProgressTrim} para aprobar</>
+                }
+                {s.t3RuleApplies && <span style={{ fontWeight:400, color:"#b45309" }}> — mínimo 7 en T3</span>}
+              </div>
+              {projections.length > 0 && (
+                <div style={{ display:"flex", flexDirection:"column", gap:"2px" }}>
+                  {projections.map(({ k, needed, feasible }) => (
+                    <div key={k} style={{ display:"flex", alignItems:"center", gap:"6px",
+                      color: feasible ? "#065f46" : "#9ca3af", fontWeight: feasible ? 700 : 400 }}>
+                      <span style={{ minWidth:"130px" }}>Con {k} prueba{k!==1?"s":""} más:</span>
+                      {feasible
+                        ? <span style={{ background:"#d1fae5", borderRadius:"4px", padding:"1px 6px" }}>necesita <b>{needed}</b> {k===1?"":"c/u"}</span>
+                        : <span>necesita {needed} {k===1?"":"c/u"} — imposible</span>
+                      }
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })()}
