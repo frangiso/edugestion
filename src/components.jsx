@@ -691,7 +691,7 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
 
   const failing       = students.filter(s => s.canRecover === false);
   const atRisk        = students.filter(s => s.canRecover === true);
-  const atRiskFailing = atRisk.filter(s => { const p = s.t[s.inProgressTrim - 1]; return p === null || p < 7; });
+  const atRiskFailing = atRisk.filter(s => s.average < 7);
 
   function StudentCard({ s, borderColor }) {
     return (
