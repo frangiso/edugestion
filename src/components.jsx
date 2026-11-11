@@ -615,7 +615,7 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
     ? grades.filter(g => g.subject === selectedSubject)
     : grades;
 
-  const students = (() => {
+  const { students, totalCount } = (() => {
     const map = {};
     subjectGrades.forEach(g => {
       // Omitir alumnos dados de baja (no están en la lista activa)
@@ -626,7 +626,7 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
       map[g.studentId].entries.push(g);
     });
 
-    return Object.values(map)
+    const all = Object.values(map)
       .filter(s => !gradeFilter || s.grade === gradeFilter)
       .map(s => {
         const t = [1,2,3].map(trim => {
@@ -677,11 +677,16 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
 
         return { ...s, t, average, neededAvg, canRecover, inProgressTrim, t3RuleApplies, count: s.entries.length };
       })
-      .filter(s => s.average !== null && s.canRecover !== null && s.t[0] !== null)
+      .filter(s => s.average !== null && s.t[0] !== null); // alumnos con datos válidos (incluye los que van bien)
+
+    const students = all
+      .filter(s => s.canRecover !== null)
       .sort((a,b) => {
         if (a.canRecover !== b.canRecover) return a.canRecover ? 1 : -1; // imposible primero
         return (b.neededAvg || 0) - (a.neededAvg || 0);
       });
+
+    return { students, totalCount: all.length };
   })();
 
   const failing = students.filter(s => s.canRecover === false);
@@ -826,6 +831,31 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
         </div>
       ) : (
         <>
+          {totalCount > 0 && (
+            <div style={{ display:"flex", gap:"10px", flexWrap:"wrap", marginBottom:"20px" }}>
+              <div style={{ flex:"1 1 180px", padding:"14px 18px", borderRadius:"12px", background:"white", border:"1px solid #e2e8f0", display:"flex", flexDirection:"column", gap:"2px" }}>
+                <div style={{ fontSize:"0.72rem", color:"#94a3b8", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px" }}>Total con notas</div>
+                <div style={{ fontWeight:800, fontSize:"1.5rem", color:"#1e293b", fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{totalCount}</div>
+                <div style={{ fontSize:"0.76rem", color:"#64748b" }}>alumnos en {selectedSubject || "todas las materias"}</div>
+              </div>
+              <div style={{ flex:"1 1 180px", padding:"14px 18px", borderRadius:"12px", background:"#fef2f2", border:"1px solid #fca5a5", display:"flex", flexDirection:"column", gap:"2px" }}>
+                <div style={{ fontSize:"0.72rem", color:"#dc2626", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px" }}>🔴 Llevan la materia</div>
+                <div style={{ display:"flex", alignItems:"baseline", gap:"8px" }}>
+                  <span style={{ fontWeight:800, fontSize:"1.5rem", color:"#dc2626", fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{failing.length}</span>
+                  <span style={{ fontWeight:700, fontSize:"1.1rem", color:"#dc2626" }}>({Math.round(failing.length / totalCount * 100)}%)</span>
+                </div>
+                <div style={{ fontSize:"0.76rem", color:"#9f1239" }}>del total de alumnos</div>
+              </div>
+              <div style={{ flex:"1 1 180px", padding:"14px 18px", borderRadius:"12px", background:"#fffbeb", border:"1px solid #fcd34d", display:"flex", flexDirection:"column", gap:"2px" }}>
+                <div style={{ fontSize:"0.72rem", color:"#d97706", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px" }}>🟡 En riesgo</div>
+                <div style={{ display:"flex", alignItems:"baseline", gap:"8px" }}>
+                  <span style={{ fontWeight:800, fontSize:"1.5rem", color:"#d97706", fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{atRisk.length}</span>
+                  <span style={{ fontWeight:700, fontSize:"1.1rem", color:"#d97706" }}>({Math.round(atRisk.length / totalCount * 100)}%)</span>
+                </div>
+                <div style={{ fontSize:"0.76rem", color:"#92400e" }}>del total de alumnos</div>
+              </div>
+            </div>
+          )}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"20px" }}>
             <div>
               <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"14px", padding:"10px 14px", background:"#fef2f2", borderRadius:"10px", border:"1px solid #fca5a5" }}>
