@@ -854,6 +854,20 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
                 </div>
                 <div style={{ fontSize:"0.76rem", color:"#92400e" }}>del total de alumnos</div>
               </div>
+              {(() => {
+                const totalDif = failing.length + atRisk.length;
+                const pct = Math.round(totalDif / totalCount * 100);
+                return (
+                  <div style={{ flex:"1 1 180px", padding:"14px 18px", borderRadius:"12px", background:"#f5f3ff", border:"2px solid #a78bfa", display:"flex", flexDirection:"column", gap:"2px" }}>
+                    <div style={{ fontSize:"0.72rem", color:"#7c3aed", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px" }}>🚨 Total con dificultades</div>
+                    <div style={{ display:"flex", alignItems:"baseline", gap:"8px" }}>
+                      <span style={{ fontWeight:800, fontSize:"1.5rem", color:"#7c3aed", fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{totalDif}</span>
+                      <span style={{ fontWeight:700, fontSize:"1.1rem", color:"#7c3aed" }}>({pct}%)</span>
+                    </div>
+                    <div style={{ fontSize:"0.76rem", color:"#5b21b6" }}>llevan + en riesgo</div>
+                  </div>
+                );
+              })()}
             </div>
           )}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"20px" }}>
