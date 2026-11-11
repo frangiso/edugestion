@@ -901,16 +901,16 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
                   <div style={{ fontSize:"0.75rem", color:"#94a3b8" }}>Puede aprobar si saca buena nota</div>
                 </div>
                 <span style={{ background:"#d97706", color:"white", borderRadius:"20px", padding:"3px 12px", fontWeight:800, fontSize:"0.9rem" }}>
-                  {atRisk.length}
+                  {atRiskFailing.length}
                 </span>
               </div>
-              {atRisk.length === 0 ? (
+              {atRiskFailing.length === 0 ? (
                 <div className="card" style={{ padding:"24px", textAlign:"center", color:"#94a3b8" }}>
                   <div style={{ fontSize:"2rem" }}>✅</div>
-                  <p style={{ margin:0, fontSize:"0.88rem" }}>Ningún alumno en riesgo</p>
+                  <p style={{ margin:0, fontSize:"0.88rem" }}>Ningún alumno desaprobando parcialmente</p>
                 </div>
               ) : (
-                <div>{atRisk.map(s => <StudentCard key={s.id} s={s} borderColor="#f59e0b" />)}</div>
+                <div>{atRiskFailing.map(s => <StudentCard key={s.id} s={s} borderColor="#f59e0b" />)}</div>
               )}
             </div>
           </div>
@@ -918,7 +918,7 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
           <div style={{ marginTop:"16px", padding:"12px 18px", background:"#f8fafc", borderRadius:"10px", border:"1px solid #e2e8f0", fontSize:"0.83rem", color:"#64748b" }}>
             Total en seguimiento: <strong>{students.length}</strong> ·{" "}
             <span style={{ color:"#dc2626", fontWeight:700 }}>{failing.length} sin recuperación</span> ·{" "}
-            <span style={{ color:"#d97706", fontWeight:700 }}>{atRisk.length} con posibilidad</span>
+            <span style={{ color:"#d97706", fontWeight:700 }}>{atRiskFailing.length} desaprobando parcialmente</span>
             <br />
             <span style={{ color:"#94a3b8", fontSize:"0.75rem" }}>
               * No se muestran alumnos sin nota en T1 (su calificación depende de la institución de origen)
