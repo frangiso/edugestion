@@ -689,8 +689,9 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
     return { students, totalCount: all.length };
   })();
 
-  const failing = students.filter(s => s.canRecover === false);
-  const atRisk  = students.filter(s => s.canRecover === true);
+  const failing       = students.filter(s => s.canRecover === false);
+  const atRisk        = students.filter(s => s.canRecover === true);
+  const atRiskFailing = atRisk.filter(s => { const p = s.t[s.inProgressTrim - 1]; return p === null || p < 7; });
 
   function StudentCard({ s, borderColor }) {
     return (
@@ -849,13 +850,13 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
               <div style={{ flex:"1 1 180px", padding:"14px 18px", borderRadius:"12px", background:"#fffbeb", border:"1px solid #fcd34d", display:"flex", flexDirection:"column", gap:"2px" }}>
                 <div style={{ fontSize:"0.72rem", color:"#d97706", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px" }}>🟡 En riesgo</div>
                 <div style={{ display:"flex", alignItems:"baseline", gap:"8px" }}>
-                  <span style={{ fontWeight:800, fontSize:"1.5rem", color:"#d97706", fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{atRisk.length}</span>
-                  <span style={{ fontWeight:700, fontSize:"1.1rem", color:"#d97706" }}>({Math.round(atRisk.length / totalCount * 100)}%)</span>
+                  <span style={{ fontWeight:800, fontSize:"1.5rem", color:"#d97706", fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{atRiskFailing.length}</span>
+                  <span style={{ fontWeight:700, fontSize:"1.1rem", color:"#d97706" }}>({Math.round(atRiskFailing.length / totalCount * 100)}%)</span>
                 </div>
-                <div style={{ fontSize:"0.76rem", color:"#92400e" }}>del total de alumnos</div>
+                <div style={{ fontSize:"0.76rem", color:"#92400e" }}>desaprobando parcialmente</div>
               </div>
               {(() => {
-                const totalDif = failing.length + atRisk.length;
+                const totalDif = failing.length + atRiskFailing.length;
                 const pct = Math.round(totalDif / totalCount * 100);
                 return (
                   <div style={{ flex:"1 1 180px", padding:"14px 18px", borderRadius:"12px", background:"#f5f3ff", border:"2px solid #a78bfa", display:"flex", flexDirection:"column", gap:"2px" }}>
@@ -864,7 +865,7 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
                       <span style={{ fontWeight:800, fontSize:"1.5rem", color:"#7c3aed", fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{totalDif}</span>
                       <span style={{ fontWeight:700, fontSize:"1.1rem", color:"#7c3aed" }}>({pct}%)</span>
                     </div>
-                    <div style={{ fontSize:"0.76rem", color:"#5b21b6" }}>llevan + en riesgo</div>
+                    <div style={{ fontSize:"0.76rem", color:"#5b21b6" }}>llevan + desaprobando parcialmente</div>
                   </div>
                 );
               })()}
