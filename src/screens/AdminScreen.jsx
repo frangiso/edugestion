@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab, analyzeStudentRisk, RiskAlertsPanel, SubjectStatusTab, EvalNotificationBanner } from "../components";
+import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab, analyzeStudentRisk, RiskAlertsPanel, SubjectStatusTab, EvalNotificationBanner, computeSubjectStatuses } from "../components";
 import {
   getAllTeachers, getAllGrades, getAllStudents, getAllAttitudes,
   createUser, updateStudent, createStudent,
@@ -68,7 +68,7 @@ export default function AdminScreen({ user, profile, logout }) {
   // Cambio de pestaña con lazy loading de notas
   function handleTabChange(newTab) {
     setTab(newTab);
-    if (newTab === "allgrades" || newTab === "overview" || newTab === "riesgo") ensureGradesLoaded();
+    if (newTab === "allgrades" || newTab === "overview" || newTab === "riesgo" || newTab === "poralumno") ensureGradesLoaded();
   }
 
   return (
@@ -86,6 +86,7 @@ export default function AdminScreen({ user, profile, logout }) {
             ["coursereport","🏫 Por Curso"],
             ["alertas","⚠️ En Riesgo"],
             ["riesgo","📉 Llevan la materia"],
+            ["poralumno","👤 Por Alumno"],
             ["attitudes","🎯 Actitudinales"],
             ["allobservations","💬 Observaciones"],
             ["top6","🏆 Top 6° Año"],
@@ -111,6 +112,7 @@ export default function AdminScreen({ user, profile, logout }) {
             {tab === "coursereport"    && <CourseReportTab />}
             {tab === "alertas"         && <RiskAlertsTab />}
             {tab === "riesgo"          && (gradesLoading ? <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando notas...</div> : <SubjectStatusTab grades={grades} />)}
+            {tab === "poralumno"       && (gradesLoading ? <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando notas...</div> : <ByStudentTab grades={grades} />)}
             {tab === "attitudes"       && <AllAttitudesTab />}
             {tab === "allobservations" && <AllObservationsTab user={user} profile={profile} />}
             {tab === "top6"            && <Top6Tab />}
@@ -2301,6 +2303,90 @@ function PermisosTab() {
           🖨️ Generar / Imprimir permiso
         </button>
       </>)}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════
+function ByStudentTab({ grades }) {
+  const [search, setSearch] = useState("");
+
+  // Build per-student summary: name, grade, failing subjects, at-risk subjects
+  const studentSummaries = (() => {
+    const map = {};
+    grades.forEach(g => {
+      if (!g.studentId) return;
+      if (!map[g.studentId]) map[g.studentId] = { id: g.studentId, name: g.studentName || "–", grade: g.studentGrade || "", grades: [] };
+      map[g.studentId].grades.push(g);
+    });
+    return Object.values(map).map(s => {
+      const statuses = computeSubjectStatuses(s.grades);
+      const llevando = statuses.filter(x => x.canRecover === false);
+      const enRiesgo = statuses.filter(x => x.canRecover === true && x.average !== null && x.average < 7);
+      return { ...s, llevando, enRiesgo };
+    }).filter(s => s.llevando.length > 0 || s.enRiesgo.length > 0)
+      .sort((a,b) => {
+        // Sort: most difficulties first
+        const scoreA = a.llevando.length * 2 + a.enRiesgo.length;
+        const scoreB = b.llevando.length * 2 + b.enRiesgo.length;
+        return scoreB - scoreA || a.name.localeCompare(b.name);
+      });
+  })();
+
+  const filtered = search.trim()
+    ? studentSummaries.filter(s => s.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : studentSummaries;
+
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"center", gap:"16px", marginBottom:"20px", flexWrap:"wrap" }}>
+        <input
+          type="text"
+          placeholder="🔍 Buscar alumno por nombre..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ flex:"1 1 280px", padding:"10px 16px", borderRadius:"10px", border:"1.5px solid #e2e8f0", fontSize:"0.95rem", outline:"none" }}
+        />
+        <div style={{ fontSize:"0.82rem", color:"#94a3b8", whiteSpace:"nowrap" }}>
+          {filtered.length} alumno{filtered.length !== 1 ? "s" : ""} con dificultades
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="card" style={{ padding:"48px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"3rem" }}>✅</div>
+          <p>{search ? "No se encontró ningún alumno con ese nombre." : "Ningún alumno con dificultades académicas registradas."}</p>
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
+          {filtered.map(s => (
+            <div key={s.id} className="card" style={{ padding:"16px 20px", borderLeft:`4px solid ${s.llevando.length > 0 ? "#dc2626" : "#d97706"}` }}>
+              <div style={{ display:"flex", alignItems:"center", gap:"12px", marginBottom:"10px", flexWrap:"wrap" }}>
+                <div style={{ flex:1 }}>
+                  <span style={{ fontWeight:800, color:"#1e293b", fontSize:"1rem" }}>{s.name}</span>
+                  <span style={{ marginLeft:"10px", padding:"2px 10px", borderRadius:"20px", background:"#dbeafe", color:"#1e40af", fontSize:"0.75rem", fontWeight:700 }}>{s.grade}</span>
+                </div>
+                <div style={{ display:"flex", gap:"8px" }}>
+                  {s.llevando.length > 0 && <span style={{ padding:"3px 10px", borderRadius:"20px", background:"#fee2e2", color:"#dc2626", fontSize:"0.78rem", fontWeight:700 }}>🔴 {s.llevando.length} lleva{s.llevando.length !== 1 ? "n" : ""}</span>}
+                  {s.enRiesgo.length > 0 && <span style={{ padding:"3px 10px", borderRadius:"20px", background:"#fef3c7", color:"#d97706", fontSize:"0.78rem", fontWeight:700 }}>🟡 {s.enRiesgo.length} en riesgo</span>}
+                </div>
+              </div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:"6px" }}>
+                {s.llevando.map(x => (
+                  <span key={x.subject} style={{ padding:"4px 12px", borderRadius:"20px", background:"#fee2e2", border:"1px solid #fca5a5", color:"#dc2626", fontSize:"0.82rem", fontWeight:600 }}>
+                    🔴 {x.subject}
+                  </span>
+                ))}
+                {s.enRiesgo.map(x => (
+                  <span key={x.subject} style={{ padding:"4px 12px", borderRadius:"20px", background:"#fef3c7", border:"1px solid #fcd34d", color:"#d97706", fontSize:"0.82rem", fontWeight:600 }}>
+                    🟡 {x.subject}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
