@@ -587,7 +587,7 @@ export function CourseObservationsTab({ user, profile }) {
 const SUBJECT_GRADES_LIST = ["1°","2°","3°","4°","5°","6°"];
 
 // Determina el trimestre activo según el calendario escolar
-function getCurrentTrimester() {
+export function getCurrentTrimester() {
   const now = new Date();
   const m = now.getMonth() + 1;
   const d = now.getDate();
@@ -595,6 +595,40 @@ function getCurrentTrimester() {
   if ((m === 5 && d >= 28) || m === 6 || m === 7 || m === 8 || (m === 9 && d <= 15)) return 2;
   if ((m === 9 && d >= 16) || m === 10 || m === 11 || (m === 12 && d <= 18)) return 3;
   return 1;
+}
+
+// Computes carrying/at-risk status per subject for a single student's grades
+export function computeSubjectStatuses(grades) {
+  const subjects = [...new Set(grades.map(g => g.subject).filter(Boolean))].sort();
+  const currentTrimNum = getCurrentTrimester();
+  const currentIdx = currentTrimNum - 1;
+  const t3InProgress = currentTrimNum === 3;
+  return subjects.map(subject => {
+    const sg = grades.filter(g => g.subject === subject);
+    const t = [1,2,3].map(trim => {
+      const scores = sg.filter(g => g.trimester === trim).map(g => g.score);
+      return scores.length ? parseFloat((scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(2)) : null;
+    });
+    if (t[0] === null) return null;
+    const lockedAvgs = t.slice(0, currentIdx).filter(v => v !== null);
+    const sumLocked = lockedAvgs.reduce((a,b)=>a+b,0);
+    const remainingCount = 3 - currentIdx;
+    let neededAvg = null, canRecover = null;
+    if (remainingCount > 0) {
+      const neededForAnnual = parseFloat(((21 - sumLocked) / remainingCount).toFixed(1));
+      const effectiveNeeded = t3InProgress ? Math.max(neededForAnnual, 7) : neededForAnnual;
+      neededAvg = effectiveNeeded;
+      if (effectiveNeeded > 10) {
+        canRecover = false;
+      } else {
+        const cur = t[currentIdx];
+        canRecover = (cur !== null && cur >= effectiveNeeded) ? null : true;
+      }
+    }
+    const validT = t.filter(v => v !== null);
+    const average = validT.length ? parseFloat((validT.reduce((a,b)=>a+b,0)/validT.length).toFixed(2)) : null;
+    return { subject, t, average, neededAvg, canRecover, inProgressTrim: currentTrimNum };
+  }).filter(Boolean);
 }
 
 export function SubjectStatusTab({ grades, subjects, defaultSubject }) {

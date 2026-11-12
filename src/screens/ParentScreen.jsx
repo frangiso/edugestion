@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, EvalNotificationBanner } from "../components";
+import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, EvalNotificationBanner, computeSubjectStatuses } from "../components";
 import { getChildrenByIds, getGradesByStudent, getObservationsByStudent, getAttitudesByStudent, ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS, getAnnouncements, getCourseObservations, getUpcomingFiltered } from "../db";
 
 // Convierte valor actitudinal a número para promediar
@@ -227,6 +227,43 @@ export default function ParentScreen({ user, profile, logout }) {
                 </div>
               </div>
             </div>
+
+            {/* Banner: materias con dificultades */}
+            {(() => {
+              const statuses = computeSubjectStatuses(allChildGrades);
+              const llevando = statuses.filter(s => s.canRecover === false);
+              const enRiesgo = statuses.filter(s => s.canRecover === true && s.average !== null && s.average < 7);
+              if (llevando.length === 0 && enRiesgo.length === 0) return null;
+              return (
+                <div style={{ marginBottom:"20px", padding:"16px 20px", borderRadius:"14px", background:"#fff7ed", border:"2px solid #fb923c", display:"flex", flexDirection:"column", gap:"10px" }}>
+                  <div style={{ fontWeight:800, color:"#c2410c", fontSize:"1rem" }}>⚠️ Materias con dificultades académicas</div>
+                  {llevando.length > 0 && (
+                    <div>
+                      <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#dc2626", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:"6px" }}>🔴 Lleva la materia</div>
+                      <div style={{ display:"flex", flexWrap:"wrap", gap:"8px" }}>
+                        {llevando.map(s => (
+                          <span key={s.subject} style={{ padding:"5px 14px", borderRadius:"20px", background:"#fee2e2", border:"1.5px solid #fca5a5", fontWeight:700, color:"#dc2626", fontSize:"0.88rem" }}>
+                            {s.subject}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {enRiesgo.length > 0 && (
+                    <div>
+                      <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#d97706", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:"6px" }}>🟡 En riesgo (desaprobando parcialmente)</div>
+                      <div style={{ display:"flex", flexWrap:"wrap", gap:"8px" }}>
+                        {enRiesgo.map(s => (
+                          <span key={s.subject} style={{ padding:"5px 14px", borderRadius:"20px", background:"#fef3c7", border:"1.5px solid #fcd34d", fontWeight:700, color:"#d97706", fontSize:"0.88rem" }}>
+                            {s.subject}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Notificaciones de nuevas evaluaciones */}
             <EvalNotificationBanner filterGrade={child?.grade} />
