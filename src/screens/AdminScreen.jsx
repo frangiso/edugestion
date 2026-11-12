@@ -2310,12 +2310,18 @@ function PermisosTab() {
 // ════════════════════════════════════════════════════════════════════
 function ByStudentTab({ grades }) {
   const [search, setSearch] = useState("");
+  const [activeIds, setActiveIds] = useState(null);
+
+  useEffect(() => {
+    getAllStudents().then(list => setActiveIds(new Set(list.map(s => s.id))));
+  }, []);
 
   // Build per-student summary: name, grade, failing subjects, at-risk subjects
   const studentSummaries = (() => {
     const map = {};
     grades.forEach(g => {
       if (!g.studentId) return;
+      if (activeIds && !activeIds.has(g.studentId)) return; // skip deactivated
       if (!map[g.studentId]) map[g.studentId] = { id: g.studentId, name: g.studentName || "–", grade: g.studentGrade || "", grades: [] };
       map[g.studentId].grades.push(g);
     });
