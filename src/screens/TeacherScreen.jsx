@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { TopBar, GLOBAL_STYLES, trimNames, avg, scoreColor, Top6Tab, CourseObservationsTab, analyzeStudentRisk, RiskAlertsPanel, SubjectStatusTab } from "../components";
 import {
   searchStudents, getStudentsByGrade,
@@ -2211,9 +2213,48 @@ function TeacherCierreTab({ grades }) {
           <option value="rendir">📝 Debe rendir</option>
           <option value="incompleto">⏳ Sin completar</option>
         </select>
-        <button onClick={() => window.print()}
-          style={{ padding:"8px 16px", borderRadius:"8px", border:"1px solid #e2e8f0", background:"white", cursor:"pointer", fontSize:"0.85rem", fontWeight:600, color:"#475569" }}>
-          🖨️ Imprimir
+        <button onClick={() => {
+          const doc = new jsPDF({ orientation:"landscape", unit:"mm", format:"a4" });
+          const materia = filtered[0]?.subject || "Informe";
+          doc.setFontSize(14);
+          doc.setFont("helvetica","bold");
+          doc.text(`Cierre de Notas – ${materia}`, 14, 16);
+          doc.setFontSize(9);
+          doc.setFont("helvetica","normal");
+          doc.text(`* Prom. >= 6.90: aprueba. T3 < 7: debe rendir 3° Trim. aunque el promedio supere 6.90.`, 14, 22);
+          let y = 28;
+          Object.entries(byGrade).sort(([a],[b])=>a.localeCompare(b)).forEach(([grade, gRows]) => {
+            doc.setFontSize(11); doc.setFont("helvetica","bold");
+            doc.text(grade, 14, y); y += 5;
+            autoTable(doc, {
+              startY: y,
+              head: [["Alumno","T1","T2","T3","Prom. Final","Resultado"]],
+              body: gRows.map(r => [
+                r.name,
+                r.t[0]!==null ? r.t[0] : "–",
+                r.t[1]!==null ? r.t[1] : "–",
+                r.t[2]!==null ? r.t[2] : "–",
+                r.finalAvg!==null ? r.finalAvg : "–",
+                r.status==="aprueba" ? "Aprueba" : r.status==="rendir" ? `Rinde: ${r.rendirTrim}` : "Sin completar",
+              ]),
+              styles: { fontSize:9, cellPadding:3 },
+              headStyles: { fillColor:[30,58,95], textColor:255, fontStyle:"bold" },
+              columnStyles: { 0:{ cellWidth:60 }, 1:{halign:"center"}, 2:{halign:"center"}, 3:{halign:"center"}, 4:{halign:"center"} },
+              didParseCell: (data) => {
+                if (data.section==="body" && data.column.index===5) {
+                  const v = data.cell.raw;
+                  if (v==="Aprueba") { data.cell.styles.textColor=[21,128,61]; data.cell.styles.fontStyle="bold"; }
+                  else if (v.startsWith("Rinde")) { data.cell.styles.textColor=[194,65,12]; data.cell.styles.fontStyle="bold"; }
+                }
+              },
+              margin: { left:14, right:14 },
+            });
+            y = doc.lastAutoTable.finalY + 8;
+          });
+          doc.save(`cierre-notas-${materia.replace(/\s+/g,"-")}.pdf`);
+        }}
+          style={{ padding:"8px 16px", borderRadius:"8px", border:"1px solid #3b82f6", background:"#3b82f6", cursor:"pointer", fontSize:"0.85rem", fontWeight:600, color:"white" }}>
+          ⬇️ Descargar PDF
         </button>
       </div>
 
@@ -2247,7 +2288,7 @@ function TeacherCierreTab({ grades }) {
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"0.86rem" }}>
                 <thead>
                   <tr style={{ background:"#1e3a5f", color:"white" }}>
-                    {["Alumno","Materia","T1","T2","T3","Prom. Final","Resultado"].map(h=>(
+                    {["Alumno","T1","T2","T3","Prom. Final","Resultado"].map(h=>(
                       <th key={h} style={{ padding:"9px 12px", textAlign:"left", fontWeight:700, fontSize:"0.73rem", textTransform:"uppercase", letterSpacing:"0.4px", whiteSpace:"nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -2261,8 +2302,7 @@ function TeacherCierreTab({ grades }) {
                       : { label:"⏳ Sin completar", bg:"#f8fafc", color:"#94a3b8", border:"#e2e8f0" };
                     return (
                       <tr key={`${r.studentId}__${r.subject}`} style={{ borderBottom:"1px solid #f1f5f9", background:i%2===0?"white":"#fafafa" }}>
-                        <td style={{ padding:"9px 12px", fontWeight:600, color:"#1e293b", whiteSpace:"nowrap" }}>{r.name}</td>
-                        <td style={{ padding:"9px 12px", color:"#475569" }}>{r.subject}</td>
+                        <td style={{ padding:"9px 12px", fontWeight:600, color:"#1e293b" }}>{r.name}</td>
                         {r.t.map((v,ti) => (
                           <td key={ti} style={{ padding:"9px 12px", textAlign:"center" }}>
                             {v!==null ? <span style={{ fontWeight:700, color:scoreColor(v) }}>{v}</span> : <span style={{ color:"#cbd5e1" }}>–</span>}
