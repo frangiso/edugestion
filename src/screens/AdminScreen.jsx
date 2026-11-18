@@ -2641,12 +2641,11 @@ function CierreTab({ grades }) {
           } else {
             status = "aprueba"; rendirTrim = null;
           }
-        } else if (failedTrims.length === 3) {
-          status = "rendir"; rendirTrim = "Materia completa";
-        } else if (failedTrims.length > 0) {
-          status = "rendir"; rendirTrim = failedTrims.map(i => `${i}° Trim.`).join(" y ");
         } else {
-          status = "rendir"; rendirTrim = "Complementario";
+          status = "rendir";
+          rendirTrim = failedTrims.length === 3
+            ? "Materia completa"
+            : failedTrims.map(i => `${i}° Trim.`).join(" y ");
         }
 
         result.push({ studentId, name: sData.name, grade: sData.grade, subject, t, finalAvg, status, rendirTrim });
