@@ -2633,12 +2633,15 @@ function CierreTab({ grades }) {
         let status, rendirTrim;
         if (finalAvg === null) {
           status = "incompleto"; rendirTrim = null;
-        } else if (t[2] !== null && t[2] < 7) {
-          // T3 not reached minimum of 7 — must retake T3 regardless of annual avg
-          status = "rendir"; rendirTrim = "T3";
         } else if (finalAvg >= 6.90) {
-          status = "aprueba"; rendirTrim = null;
+          if (t[2] !== null && t[2] < 7) {
+            // Avg would pass but T3 < minimum → must retake only T3
+            status = "rendir"; rendirTrim = "T3";
+          } else {
+            status = "aprueba"; rendirTrim = null;
+          }
         } else {
+          // Avg < 6.90 → complementary exam (covers all trimesters)
           status = "rendir"; rendirTrim = "complementario";
         }
 
