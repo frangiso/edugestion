@@ -10,7 +10,8 @@ import {
   getAnnouncements, createAnnouncement, deleteAnnouncement,
   recoverOrphanAccount, updateUserProfile,
   getAllInternalObs, deleteInternalObs,
-  sendParentPasswordReset, updateParentCredentials, updateTeacherCredentials
+  sendParentPasswordReset, updateParentCredentials, updateTeacherCredentials,
+  getAllExternalGrades, addExternalGrade, deleteExternalGrade
 } from "../db";
 
 const GRADES = ["1°","2°","3°","4°","5°","6°"];
@@ -68,7 +69,7 @@ export default function AdminScreen({ user, profile, logout }) {
   // Cambio de pestaña con lazy loading de notas
   function handleTabChange(newTab) {
     setTab(newTab);
-    if (newTab === "allgrades" || newTab === "overview" || newTab === "riesgo" || newTab === "poralumno") ensureGradesLoaded();
+    if (newTab === "allgrades" || newTab === "overview" || newTab === "riesgo" || newTab === "poralumno" || newTab === "cierre") ensureGradesLoaded();
   }
 
   return (
@@ -93,6 +94,8 @@ export default function AdminScreen({ user, profile, logout }) {
             ["announcements","📢 Avisos"],
             ["internalobs","🔒 Obs. Internas"],
             ["export","📥 Exportar Excel"],
+            ["externas","🏫 Notas Externas"],
+            ["cierre","📋 Cierre de Notas"],
             ["certificados","📄 Certificados"],
             ["permisos","📝 Permisos de Examen"],
           ].map(([k,l]) => (
@@ -118,6 +121,8 @@ export default function AdminScreen({ user, profile, logout }) {
             {tab === "top6"            && <Top6Tab />}
             {tab === "announcements"  && <AnnouncementsTab user={user} profile={profile} />}
             {tab === "internalobs"    && <AllInternalObsTab />}
+            {tab === "externas"        && <ExternalGradesTab profile={profile} />}
+            {tab === "cierre"          && (gradesLoading ? <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando notas...</div> : <CierreTab grades={grades} />)}
             {tab === "export"         && <ExportTab />}
             {tab === "certificados"   && <CertificadosTab />}
             {tab === "permisos"       && <PermisosTab />}
@@ -2393,6 +2398,385 @@ function ByStudentTab({ grades }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// NOTAS EXTERNAS — cargar promedios de alumnos de otros colegios
+// ════════════════════════════════════════════════════════════════════
+function ExternalGradesTab({ profile }) {
+  const [students, setStudents] = useState([]);
+  const [externalGrades, setExternalGrades] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+  const [form, setForm] = useState({ studentId:"", subject:"", trimester:"1", average:"" });
+  const [filterGrade, setFilterGrade] = useState("");
+
+  useEffect(() => {
+    Promise.all([getAllStudents(), getAllExternalGrades()]).then(([s, e]) => {
+      setStudents(s);
+      setExternalGrades(e);
+      setLoading(false);
+    });
+  }, []);
+
+  const selectedStudent = students.find(s => s.id === form.studentId);
+  const filteredStudents = search.trim()
+    ? students.filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
+    : students;
+
+  async function handleAdd() {
+    if (!form.studentId || !form.subject || !form.average) return;
+    const a = parseFloat(form.average);
+    if (isNaN(a) || a < 1 || a > 10) return;
+    setSaving(true);
+    const st = students.find(s => s.id === form.studentId);
+    await addExternalGrade({
+      studentId: form.studentId,
+      studentName: st?.name || "–",
+      studentGrade: st?.grade || "–",
+      subject: form.subject,
+      trimester: parseInt(form.trimester),
+      average: a,
+      createdBy: profile?.email || "–",
+    });
+    const updated = await getAllExternalGrades();
+    setExternalGrades(updated);
+    setForm(f => ({ ...f, subject:"", average:"" }));
+    setSaving(false);
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm("¿Eliminar esta nota externa?")) return;
+    await deleteExternalGrade(id);
+    setExternalGrades(eg => eg.filter(e => e.id !== id));
+  }
+
+  const displayGrades = filterGrade
+    ? externalGrades.filter(e => e.studentGrade === filterGrade)
+    : externalGrades;
+
+  if (loading) return <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando...</div>;
+
+  return (
+    <div>
+      <div className="card" style={{ padding:"20px 24px", marginBottom:"24px" }}>
+        <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:"0 0 16px", fontSize:"1.1rem" }}>
+          🏫 Cargar nota de ingreso (otro colegio)
+        </h3>
+        <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
+          <div>
+            <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", marginBottom:"4px" }}>Alumno</div>
+            <input type="text" placeholder="🔍 Buscar por nombre..." value={search}
+              onChange={e => { setSearch(e.target.value); setForm(f => ({ ...f, studentId:"" })); }}
+              style={{ width:"100%", padding:"8px 12px", borderRadius:"8px", border:"1.5px solid #e2e8f0", fontSize:"0.9rem", boxSizing:"border-box" }} />
+            {search && !form.studentId && (
+              <div style={{ border:"1px solid #e2e8f0", borderRadius:"8px", marginTop:"4px", maxHeight:"180px", overflowY:"auto", background:"white" }}>
+                {filteredStudents.length === 0
+                  ? <div style={{ padding:"12px", color:"#94a3b8", fontSize:"0.85rem" }}>Sin resultados</div>
+                  : filteredStudents.map(s => (
+                    <div key={s.id} onClick={() => { setForm(f => ({ ...f, studentId:s.id })); setSearch(s.name); }}
+                      style={{ padding:"10px 14px", cursor:"pointer", borderBottom:"1px solid #f1f5f9", fontSize:"0.88rem" }}>
+                      <strong>{s.name}</strong> <span style={{ color:"#94a3b8" }}>{s.grade}</span>
+                    </div>
+                  ))
+                }
+              </div>
+            )}
+            {selectedStudent && <div style={{ marginTop:"6px", fontSize:"0.8rem", color:"#059669", fontWeight:600 }}>✓ {selectedStudent.name} ({selectedStudent.grade})</div>}
+          </div>
+          <div style={{ display:"flex", gap:"12px", flexWrap:"wrap" }}>
+            <div style={{ flex:"2 1 200px" }}>
+              <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", marginBottom:"4px" }}>Materia</div>
+              <select value={form.subject} onChange={e => setForm(f => ({ ...f, subject:e.target.value }))}
+                style={{ width:"100%", padding:"8px 10px", borderRadius:"8px", border:"1.5px solid #e2e8f0", fontSize:"0.88rem" }}>
+                <option value="">Seleccionar materia...</option>
+                {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div style={{ flex:"1 1 120px" }}>
+              <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", marginBottom:"4px" }}>Trimestre</div>
+              <select value={form.trimester} onChange={e => setForm(f => ({ ...f, trimester:e.target.value }))}
+                style={{ width:"100%", padding:"8px 10px", borderRadius:"8px", border:"1.5px solid #e2e8f0", fontSize:"0.88rem" }}>
+                <option value="1">1° Trimestre</option>
+                <option value="2">2° Trimestre</option>
+                <option value="3">3° Trimestre</option>
+              </select>
+            </div>
+            <div style={{ flex:"1 1 120px" }}>
+              <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#64748b", marginBottom:"4px" }}>Promedio (1–10)</div>
+              <input type="number" min="1" max="10" step="0.01" value={form.average}
+                onChange={e => setForm(f => ({ ...f, average:e.target.value }))} placeholder="ej: 7.50"
+                style={{ width:"100%", padding:"8px 10px", borderRadius:"8px", border:"1.5px solid #e2e8f0", fontSize:"0.88rem", boxSizing:"border-box" }} />
+            </div>
+          </div>
+          <button onClick={handleAdd} disabled={saving || !form.studentId || !form.subject || !form.average}
+            className="btn-primary" style={{ alignSelf:"flex-start", padding:"10px 24px" }}>
+            {saving ? "Guardando..." : "➕ Agregar nota externa"}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"12px", flexWrap:"wrap", gap:"10px" }}>
+        <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0, fontSize:"1rem" }}>
+          Notas externas cargadas ({externalGrades.length})
+        </h3>
+        <div style={{ display:"flex", gap:"6px", flexWrap:"wrap" }}>
+          {["", ...GRADES].map(g => (
+            <button key={g} onClick={() => setFilterGrade(g)}
+              style={{ padding:"4px 10px", borderRadius:"20px", border:`1px solid ${filterGrade===g?"#1e3a5f":"#e2e8f0"}`, background:filterGrade===g?"#1e3a5f":"white", color:filterGrade===g?"white":"#64748b", cursor:"pointer", fontSize:"0.76rem", fontWeight:600 }}>
+              {g || "Todos"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {displayGrades.length === 0 ? (
+        <div className="card" style={{ padding:"40px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"2.5rem" }}>🏫</div>
+          <p>No hay notas externas cargadas{filterGrade ? ` para ${filterGrade}` : ""}.</p>
+        </div>
+      ) : (
+        <div className="card" style={{ overflow:"auto" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"0.87rem" }}>
+            <thead>
+              <tr style={{ background:"#f8fafc", borderBottom:"2px solid #e2e8f0" }}>
+                {["Alumno","Curso","Materia","Trimestre","Promedio",""].map(h => (
+                  <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontWeight:700, color:"#64748b", fontSize:"0.76rem", textTransform:"uppercase", letterSpacing:"0.4px" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {displayGrades.map(e => (
+                <tr key={e.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
+                  <td style={{ padding:"9px 14px", fontWeight:600, color:"#1e293b" }}>{e.studentName}</td>
+                  <td style={{ padding:"9px 14px" }}><span style={{ padding:"2px 8px", borderRadius:"12px", background:"#dbeafe", color:"#1e40af", fontSize:"0.73rem", fontWeight:700 }}>{e.studentGrade}</span></td>
+                  <td style={{ padding:"9px 14px", color:"#475569" }}>{e.subject}</td>
+                  <td style={{ padding:"9px 14px" }}><span style={{ fontWeight:600, color:"#7c3aed" }}>{trimNames[e.trimester-1]}</span></td>
+                  <td style={{ padding:"9px 14px" }}><span style={{ fontWeight:800, fontSize:"1.1rem", color:scoreColor(e.average), fontFamily:"'Playfair Display',serif" }}>{e.average}</span></td>
+                  <td style={{ padding:"9px 14px" }}><button onClick={() => handleDelete(e.id)} style={{ background:"none", border:"none", cursor:"pointer", color:"#ef4444", fontSize:"1rem" }}>🗑️</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// CIERRE DE NOTAS — informe por curso: quién rinde y qué trimestre
+// Reglas:
+//   - T3 < 7 → rinde T3 (aunque el promedio anual sea ≥ 6.90)
+//   - T3 ≥ 7 y prom. anual ≥ 6.90 → aprueba (redondea a 7)
+//   - T3 ≥ 7 y prom. anual < 6.90 → rinde complementario
+// ════════════════════════════════════════════════════════════════════
+function CierreTab({ grades }) {
+  const [externalGrades, setExternalGrades] = useState([]);
+  const [activeIds, setActiveIds] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [filterGrade, setFilterGrade] = useState(GRADES[0] || "");
+  const [filterSubject, setFilterSubject] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    Promise.all([getAllExternalGrades(), getAllStudents()]).then(([e, s]) => {
+      setExternalGrades(e);
+      setActiveIds(new Set(s.map(x => x.id)));
+      setLoading(false);
+    });
+  }, []);
+
+  const externalLookup = {};
+  externalGrades.forEach(e => { externalLookup[`${e.studentId}__${e.subject}__${e.trimester}`] = e.average; });
+
+  const allSubjectsSet = new Set([...grades.map(g => g.subject).filter(Boolean), ...externalGrades.map(e => e.subject)]);
+  const allSubjects = [...allSubjectsSet].sort();
+
+  // Compute rows: per student+subject
+  const rows = (() => {
+    if (!activeIds) return [];
+    const map = {};
+    grades.forEach(g => {
+      if (!g.studentId || !activeIds.has(g.studentId)) return;
+      if (!map[g.studentId]) map[g.studentId] = { name: g.studentName||"–", grade: g.studentGrade||"", subjects:{} };
+      if (!map[g.studentId].subjects[g.subject]) map[g.studentId].subjects[g.subject] = {1:[],2:[],3:[]};
+      map[g.studentId].subjects[g.subject][g.trimester].push(g.score);
+    });
+    externalGrades.forEach(e => {
+      if (!activeIds.has(e.studentId)) return;
+      if (!map[e.studentId]) map[e.studentId] = { name: e.studentName||"–", grade: e.studentGrade||"", subjects:{} };
+      if (!map[e.studentId].subjects[e.subject]) map[e.studentId].subjects[e.subject] = {1:[],2:[],3:[]};
+    });
+
+    const result = [];
+    Object.entries(map).forEach(([studentId, sData]) => {
+      Object.entries(sData.subjects).forEach(([subject, trimData]) => {
+        const t = [1,2,3].map(trim => {
+          const extKey = `${studentId}__${subject}__${trim}`;
+          if (externalLookup[extKey] !== undefined) return externalLookup[extKey];
+          const scores = trimData[trim];
+          return scores.length ? parseFloat((scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(2)) : null;
+        });
+
+        if (t[0]===null && t[1]===null && t[2]===null) return;
+
+        const finalAvg = (t[0]!==null && t[1]!==null && t[2]!==null)
+          ? parseFloat(((t[0]+t[1]+t[2])/3).toFixed(2))
+          : null;
+
+        // Determine status and which trimester to take exam
+        let status, rendirTrim;
+        if (finalAvg === null) {
+          status = "incompleto"; rendirTrim = null;
+        } else if (t[2] !== null && t[2] < 7) {
+          // T3 not reached minimum of 7 — must retake T3 regardless of annual avg
+          status = "rendir"; rendirTrim = "T3";
+        } else if (finalAvg >= 6.90) {
+          status = "aprueba"; rendirTrim = null;
+        } else {
+          status = "rendir"; rendirTrim = "complementario";
+        }
+
+        result.push({ studentId, name: sData.name, grade: sData.grade, subject, t, finalAvg, status, rendirTrim });
+      });
+    });
+
+    return result.sort((a,b) => {
+      if (a.grade !== b.grade) return a.grade.localeCompare(b.grade);
+      return a.name.localeCompare(b.name);
+    });
+  })();
+
+  const filtered = rows.filter(r => {
+    if (filterGrade && r.grade !== filterGrade) return false;
+    if (filterSubject && r.subject !== filterSubject) return false;
+    if (filterStatus && r.status !== filterStatus) return false;
+    if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  // Group filtered by grade for display
+  const byGrade = {};
+  filtered.forEach(r => { if (!byGrade[r.grade]) byGrade[r.grade] = []; byGrade[r.grade].push(r); });
+
+  const counts = { aprueba: filtered.filter(r=>r.status==="aprueba").length, rendir: filtered.filter(r=>r.status==="rendir").length, incompleto: filtered.filter(r=>r.status==="incompleto").length };
+
+  if (loading) return <div style={{ textAlign:"center", padding:"60px", color:"#94a3b8" }}>Cargando...</div>;
+
+  return (
+    <div>
+      {/* Filtros */}
+      <div style={{ display:"flex", gap:"10px", marginBottom:"16px", flexWrap:"wrap", alignItems:"flex-end" }}>
+        <input type="text" placeholder="🔍 Buscar alumno..." value={search} onChange={e=>setSearch(e.target.value)}
+          style={{ flex:"2 1 160px", padding:"8px 12px", borderRadius:"8px", border:"1.5px solid #e2e8f0", fontSize:"0.88rem" }} />
+        <select value={filterGrade} onChange={e=>setFilterGrade(e.target.value)}
+          style={{ flex:"1 1 110px", padding:"8px 10px", borderRadius:"8px", border:"1.5px solid #e2e8f0", fontSize:"0.88rem" }}>
+          <option value="">Todos los cursos</option>
+          {GRADES.map(g=><option key={g} value={g}>{g}</option>)}
+        </select>
+        <select value={filterSubject} onChange={e=>setFilterSubject(e.target.value)}
+          style={{ flex:"2 1 180px", padding:"8px 10px", borderRadius:"8px", border:"1.5px solid #e2e8f0", fontSize:"0.88rem" }}>
+          <option value="">Todas las materias</option>
+          {allSubjects.map(s=><option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}
+          style={{ flex:"1 1 140px", padding:"8px 10px", borderRadius:"8px", border:"1.5px solid #e2e8f0", fontSize:"0.88rem" }}>
+          <option value="">Todos</option>
+          <option value="aprueba">✅ Aprueba</option>
+          <option value="rendir">📝 Debe rendir</option>
+          <option value="incompleto">⏳ Sin completar</option>
+        </select>
+        <button onClick={() => window.print()}
+          style={{ padding:"8px 16px", borderRadius:"8px", border:"1px solid #e2e8f0", background:"white", cursor:"pointer", fontSize:"0.85rem", fontWeight:600, color:"#475569" }}>
+          🖨️ Imprimir
+        </button>
+      </div>
+
+      {/* Resumen */}
+      <div style={{ display:"flex", gap:"10px", marginBottom:"20px", flexWrap:"wrap" }}>
+        {[
+          { label:"✅ Aprueban", val:counts.aprueba, bg:"#f0fdf4", border:"#86efac", color:"#15803d" },
+          { label:"📝 Deben rendir", val:counts.rendir, bg:"#fff7ed", border:"#fdba74", color:"#c2410c" },
+          { label:"⏳ Sin completar", val:counts.incompleto, bg:"#f8fafc", border:"#e2e8f0", color:"#94a3b8" },
+        ].map(c => (
+          <div key={c.label} style={{ flex:"1 1 140px", padding:"12px 16px", borderRadius:"10px", background:c.bg, border:`1px solid ${c.border}` }}>
+            <div style={{ fontSize:"0.72rem", color:c.color, fontWeight:700, textTransform:"uppercase" }}>{c.label}</div>
+            <div style={{ fontWeight:800, fontSize:"1.6rem", color:c.color, fontFamily:"'Playfair Display',serif" }}>{c.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {Object.keys(byGrade).length === 0 ? (
+        <div className="card" style={{ padding:"40px", textAlign:"center", color:"#94a3b8" }}>
+          <div style={{ fontSize:"2.5rem" }}>📋</div>
+          <p>No hay datos para los filtros seleccionados.</p>
+        </div>
+      ) : (
+        Object.entries(byGrade).sort(([a],[b])=>a.localeCompare(b)).map(([grade, gradeRows]) => (
+          <div key={grade} style={{ marginBottom:"32px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:"12px", marginBottom:"10px" }}>
+              <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0, fontSize:"1.15rem" }}>{grade}</h3>
+              <span style={{ padding:"3px 10px", borderRadius:"20px", background:"#dbeafe", color:"#1e40af", fontSize:"0.76rem", fontWeight:700 }}>{gradeRows.length} registros</span>
+              <span style={{ padding:"3px 10px", borderRadius:"20px", background:"#fee2e2", color:"#dc2626", fontSize:"0.76rem", fontWeight:700 }}>📝 {gradeRows.filter(r=>r.status==="rendir").length} deben rendir</span>
+            </div>
+            <div className="card" style={{ overflow:"auto" }}>
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"0.86rem" }}>
+                <thead>
+                  <tr style={{ background:"#1e3a5f", color:"white" }}>
+                    {["Alumno","Materia","T1","T2","T3","Prom. Final","Estado","Rinde"].map(h=>(
+                      <th key={h} style={{ padding:"9px 12px", textAlign:"left", fontWeight:700, fontSize:"0.73rem", textTransform:"uppercase", letterSpacing:"0.4px", whiteSpace:"nowrap" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {gradeRows.map((r,i) => {
+                    const statusCfg = r.status==="aprueba"
+                      ? { label:"✅ Aprueba", bg:"#f0fdf4", color:"#15803d", border:"#86efac" }
+                      : r.status==="rendir"
+                      ? { label:"📝 Rinde", bg:"#fff7ed", color:"#c2410c", border:"#fdba74" }
+                      : { label:"⏳ Incompleto", bg:"#f8fafc", color:"#94a3b8", border:"#e2e8f0" };
+                    const rendirLabel = r.rendirTrim === "T3"
+                      ? <span style={{ fontWeight:700, color:"#dc2626" }}>3° Trimestre</span>
+                      : r.rendirTrim === "complementario"
+                      ? <span style={{ fontWeight:700, color:"#c2410c" }}>Complementario</span>
+                      : <span style={{ color:"#94a3b8" }}>–</span>;
+                    return (
+                      <tr key={`${r.studentId}__${r.subject}`} style={{ borderBottom:"1px solid #f1f5f9", background:i%2===0?"white":"#fafafa" }}>
+                        <td style={{ padding:"9px 12px", fontWeight:600, color:"#1e293b", whiteSpace:"nowrap" }}>{r.name}</td>
+                        <td style={{ padding:"9px 12px", color:"#475569" }}>{r.subject}</td>
+                        {r.t.map((v,ti) => (
+                          <td key={ti} style={{ padding:"9px 12px", textAlign:"center" }}>
+                            {v!==null ? <span style={{ fontWeight:700, color:scoreColor(v) }}>{v}</span> : <span style={{ color:"#cbd5e1" }}>–</span>}
+                          </td>
+                        ))}
+                        <td style={{ padding:"9px 12px", textAlign:"center" }}>
+                          {r.finalAvg!==null
+                            ? <span style={{ fontWeight:800, fontSize:"1.05rem", color:scoreColor(r.finalAvg), fontFamily:"'Playfair Display',serif" }}>{r.finalAvg}</span>
+                            : <span style={{ color:"#cbd5e1" }}>–</span>}
+                        </td>
+                        <td style={{ padding:"9px 12px" }}>
+                          <span style={{ padding:"3px 9px", borderRadius:"20px", background:statusCfg.bg, border:`1px solid ${statusCfg.border}`, color:statusCfg.color, fontWeight:700, fontSize:"0.78rem", whiteSpace:"nowrap" }}>
+                            {statusCfg.label}
+                          </span>
+                        </td>
+                        <td style={{ padding:"9px 12px" }}>{rendirLabel}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))
+      )}
+      <div style={{ marginTop:"12px", fontSize:"0.76rem", color:"#94a3b8" }}>
+        * Prom. ≥ 6.90 → aprueba (redondea a 7). T3 {"<"} 7 → debe rendir 3° Trimestre aunque el promedio anual supere 6.90. Las notas de ingreso de otros colegios se usan como promedio del trimestre correspondiente.
+      </div>
     </div>
   );
 }
