@@ -849,3 +849,28 @@ export async function deleteInternalObs(id, teacherId) {
   internalObsCache.allByMonth = {};
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// NOTAS EXTERNAS — promedios de trimestres de otros colegios
+//   studentId, studentName, studentGrade, subject,
+//   trimester (1|2|3), average (number), createdAt, createdBy
+// ═══════════════════════════════════════════════════════════════════
+let externalGradesCache = null;
+
+export async function getAllExternalGrades() {
+  if (externalGradesCache) return externalGradesCache;
+  const snap = await getDocs(collection(db, "externalGrades"));
+  externalGradesCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return externalGradesCache;
+}
+
+export async function addExternalGrade(data) {
+  const ref = await addDoc(collection(db, "externalGrades"), { ...data, createdAt: serverTimestamp() });
+  externalGradesCache = null;
+  return ref.id;
+}
+
+export async function deleteExternalGrade(id) {
+  await deleteDoc(doc(db, "externalGrades", id));
+  externalGradesCache = null;
+}
+
