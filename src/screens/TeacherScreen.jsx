@@ -2247,21 +2247,18 @@ function TeacherCierreTab({ grades }) {
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"0.86rem" }}>
                 <thead>
                   <tr style={{ background:"#1e3a5f", color:"white" }}>
-                    {["Alumno","Materia","T1","T2","T3","Prom. Final","Estado","Rinde"].map(h=>(
+                    {["Alumno","Materia","T1","T2","T3","Prom. Final","Resultado"].map(h=>(
                       <th key={h} style={{ padding:"9px 12px", textAlign:"left", fontWeight:700, fontSize:"0.73rem", textTransform:"uppercase", letterSpacing:"0.4px", whiteSpace:"nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {gradeRows.map((r,i) => {
-                    const statusCfg = r.status==="aprueba"
+                    const resultCfg = r.status==="aprueba"
                       ? { label:"✅ Aprueba", bg:"#f0fdf4", color:"#15803d", border:"#86efac" }
                       : r.status==="rendir"
-                      ? { label:"📝 Rinde", bg:"#fff7ed", color:"#c2410c", border:"#fdba74" }
-                      : { label:"⏳ Incompleto", bg:"#f8fafc", color:"#94a3b8", border:"#e2e8f0" };
-                    const rendirLabel = r.rendirTrim
-                      ? <span style={{ fontWeight:700, color: r.rendirTrim === "Materia completa" ? "#7c3aed" : "#c2410c" }}>{r.rendirTrim}</span>
-                      : <span style={{ color:"#94a3b8" }}>–</span>;
+                      ? { label:`📝 ${r.rendirTrim}`, bg:"#fff7ed", color: r.rendirTrim==="Materia completa"?"#7c3aed":"#c2410c", border:"#fdba74" }
+                      : { label:"⏳ Sin completar", bg:"#f8fafc", color:"#94a3b8", border:"#e2e8f0" };
                     return (
                       <tr key={`${r.studentId}__${r.subject}`} style={{ borderBottom:"1px solid #f1f5f9", background:i%2===0?"white":"#fafafa" }}>
                         <td style={{ padding:"9px 12px", fontWeight:600, color:"#1e293b", whiteSpace:"nowrap" }}>{r.name}</td>
@@ -2277,11 +2274,10 @@ function TeacherCierreTab({ grades }) {
                             : <span style={{ color:"#cbd5e1" }}>–</span>}
                         </td>
                         <td style={{ padding:"9px 12px" }}>
-                          <span style={{ padding:"3px 9px", borderRadius:"20px", background:statusCfg.bg, border:`1px solid ${statusCfg.border}`, color:statusCfg.color, fontWeight:700, fontSize:"0.78rem", whiteSpace:"nowrap" }}>
-                            {statusCfg.label}
+                          <span style={{ padding:"3px 9px", borderRadius:"20px", background:resultCfg.bg, border:`1px solid ${resultCfg.border}`, color:resultCfg.color, fontWeight:700, fontSize:"0.78rem", whiteSpace:"nowrap" }}>
+                            {resultCfg.label}
                           </span>
                         </td>
-                        <td style={{ padding:"9px 12px" }}>{rendirLabel}</td>
                       </tr>
                     );
                   })}
