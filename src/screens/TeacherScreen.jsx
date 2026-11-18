@@ -2149,10 +2149,12 @@ function TeacherCierreTab({ grades }) {
         let status, rendirTrim;
         if (finalAvg === null) {
           status = "incompleto"; rendirTrim = null;
-        } else if (t[2] !== null && t[2] < 7) {
-          status = "rendir"; rendirTrim = "T3";
         } else if (finalAvg >= 6.90) {
-          status = "aprueba"; rendirTrim = null;
+          if (t[2] !== null && t[2] < 7) {
+            status = "rendir"; rendirTrim = "T3";
+          } else {
+            status = "aprueba"; rendirTrim = null;
+          }
         } else {
           status = "rendir"; rendirTrim = "complementario";
         }
