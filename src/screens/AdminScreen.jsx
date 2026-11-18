@@ -2629,20 +2629,24 @@ function CierreTab({ grades }) {
           ? parseFloat(((t[0]+t[1]+t[2])/3).toFixed(2))
           : null;
 
-        // Determine status and which trimester to take exam
+        // Trimesters the student failed (score present and < 7)
+        const failedTrims = [1,2,3].filter(i => t[i-1] !== null && t[i-1] < 7);
+
         let status, rendirTrim;
         if (finalAvg === null) {
           status = "incompleto"; rendirTrim = null;
         } else if (finalAvg >= 6.90) {
           if (t[2] !== null && t[2] < 7) {
-            // Avg would pass but T3 < minimum → must retake only T3
-            status = "rendir"; rendirTrim = "T3";
+            status = "rendir"; rendirTrim = "3° Trim.";
           } else {
             status = "aprueba"; rendirTrim = null;
           }
+        } else if (failedTrims.length === 3) {
+          status = "rendir"; rendirTrim = "Materia completa";
+        } else if (failedTrims.length > 0) {
+          status = "rendir"; rendirTrim = failedTrims.map(i => `${i}° Trim.`).join(" y ");
         } else {
-          // Avg < 6.90 → complementary exam (covers all trimesters)
-          status = "rendir"; rendirTrim = "complementario";
+          status = "rendir"; rendirTrim = "Complementario";
         }
 
         result.push({ studentId, name: sData.name, grade: sData.grade, subject, t, finalAvg, status, rendirTrim });
@@ -2743,10 +2747,8 @@ function CierreTab({ grades }) {
                       : r.status==="rendir"
                       ? { label:"📝 Rinde", bg:"#fff7ed", color:"#c2410c", border:"#fdba74" }
                       : { label:"⏳ Incompleto", bg:"#f8fafc", color:"#94a3b8", border:"#e2e8f0" };
-                    const rendirLabel = r.rendirTrim === "T3"
-                      ? <span style={{ fontWeight:700, color:"#dc2626" }}>3° Trimestre</span>
-                      : r.rendirTrim === "complementario"
-                      ? <span style={{ fontWeight:700, color:"#c2410c" }}>Complementario</span>
+                    const rendirLabel = r.rendirTrim
+                      ? <span style={{ fontWeight:700, color: r.rendirTrim === "Materia completa" ? "#7c3aed" : "#c2410c" }}>{r.rendirTrim}</span>
                       : <span style={{ color:"#94a3b8" }}>–</span>;
                     return (
                       <tr key={`${r.studentId}__${r.subject}`} style={{ borderBottom:"1px solid #f1f5f9", background:i%2===0?"white":"#fafafa" }}>
