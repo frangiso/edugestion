@@ -874,3 +874,18 @@ export async function deleteExternalGrade(id) {
   externalGradesCache = null;
 }
 
+export async function upsertExternalGrade(data) {
+  const all = await getAllExternalGrades();
+  const existing = all.find(e =>
+    e.studentId === data.studentId &&
+    e.subject === data.subject &&
+    e.trimester === data.trimester
+  );
+  if (existing) {
+    await updateDoc(doc(db, "externalGrades", existing.id), { average: data.average, updatedAt: serverTimestamp() });
+  } else {
+    await addDoc(collection(db, "externalGrades"), { ...data, createdAt: serverTimestamp() });
+  }
+  externalGradesCache = null;
+}
+

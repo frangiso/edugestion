@@ -13,7 +13,7 @@ import {
   ATTITUDE_VALUES, ATTITUDE_LABELS, ATTITUDE_COLORS,
   getUpcomingByTeacher, getUpcomingPastByTeacher, createUpcoming, deleteUpcoming, updateUpcoming,
   getInternalObsByTeacher, createInternalObs, updateInternalObs, deleteInternalObs,
-  getAllStudents, getAllExternalGrades, addExternalGrade, deleteExternalGrade,
+  getAllStudents, getAllExternalGrades, addExternalGrade, deleteExternalGrade, upsertExternalGrade,
 } from "../db";
 
 const GRADES = ["1°","2°","3°","4°","5°","6°"];
@@ -1308,6 +1308,11 @@ function StudentGradesTab({ user, subject, subjects, setSaving }) {
   const [mode, setMode] = useState("bulk"); // "bulk" | "individual"
   const [allTeacherGrades, setAllTeacherGrades] = useState(null); // null = no cargado aún
   const [loadingAll, setLoadingAll] = useState(false);
+  const [externalGrades, setExternalGrades] = useState([]);
+
+  useEffect(() => {
+    getAllExternalGrades().then(setExternalGrades);
+  }, []);
 
   // ── Modo individual ──
   const [nameQ, setNameQ] = useState("");
@@ -1316,6 +1321,8 @@ function StudentGradesTab({ user, subject, subjects, setSaving }) {
   const [searching, setSearching] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [loadingGrades, setLoadingGrades] = useState(false);
+  const [editingTrim, setEditingTrim] = useState(null); // trimestre que se está editando (1,2,3)
+  const [editValue, setEditValue] = useState("");
 
   // Cargar notas del profe + sus materias (incluye reemplazos)
   async function ensureTeacherGrades() {
@@ -1340,6 +1347,45 @@ function StudentGradesTab({ user, subject, subjects, setSaving }) {
     setAllTeacherGrades(prev => prev ? prev.filter(g => g.id !== id) : null);
     setSaving(false);
   }
+
+  async function saveExtOverride(trim) {
+    const val = parseFloat(editValue.replace(",","."));
+    if (isNaN(val) || val < 0 || val > 10) { alert("Ingresá un valor entre 0 y 10"); return; }
+    setSaving(true);
+    await upsertExternalGrade({
+      studentId: selectedStudent.id,
+      studentName: selectedStudent.name,
+      studentGrade: selectedStudent.grade || "",
+      subject,
+      trimester: trim,
+      average: val,
+      createdBy: user.uid,
+    });
+    const updated = await getAllExternalGrades();
+    setExternalGrades(updated);
+    setEditingTrim(null);
+    setSaving(false);
+  }
+
+  async function deleteExtOverride(trim) {
+    const entry = externalGrades.find(e =>
+      e.studentId === selectedStudent?.id && e.subject === subject && e.trimester === trim
+    );
+    if (!entry) return;
+    setSaving(true);
+    await deleteExternalGrade(entry.id);
+    const updated = await getAllExternalGrades();
+    setExternalGrades(updated);
+    setSaving(false);
+  }
+
+  // Lookup de overrides para el alumno seleccionado
+  const extOverride = {};
+  externalGrades.forEach(e => {
+    if (e.studentId === selectedStudent?.id && e.subject === subject) {
+      extOverride[e.trimester] = e.average;
+    }
+  });
 
   async function doSearch() {
     if (!nameQ && !gradeQ) return;
@@ -1400,6 +1446,7 @@ function StudentGradesTab({ user, subject, subjects, setSaving }) {
           user={user}
           subject={subject}
           allTeacherGrades={allTeacherGrades}
+          externalGrades={externalGrades}
           loadingAll={loadingAll}
           ensureTeacherGrades={ensureTeacherGrades}
           onSelectStudent={(s) => { handleModeChange("individual"); selectStudent(s); }}
@@ -1522,17 +1569,54 @@ function StudentGradesTab({ user, subject, subjects, setSaving }) {
                   {/* Notas por trimestre */}
                   {[1, 2, 3].map(t => {
                     const tGrades = byTrim[t];
-                    if (tGrades.length === 0) return null;
-                    const tAvg = avg(tGrades.map(g => g.score));
-                    const tAvgNum = parseFloat(tAvg);
+                    if (tGrades.length === 0 && extOverride[t] === undefined) return null;
+                    const computedAvg = tGrades.length > 0 ? avg(tGrades.map(g => g.score)) : null;
+                    const hasOverride = extOverride[t] !== undefined;
+                    const displayAvg = hasOverride ? String(extOverride[t]) : (computedAvg || "–");
+                    const displayNum = parseFloat(displayAvg);
                     return (
                       <div key={t} style={{ marginBottom:"20px" }}>
-                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px" }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px", flexWrap:"wrap", gap:"8px" }}>
                           <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#1e3a5f", margin:0, fontSize:"1.05rem" }}>{trimNames[t-1]}</h3>
-                          <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
-                            <span style={{ fontSize:"0.78rem", color:"#64748b" }}>{tGrades.length} eval.</span>
-                            <span style={{ fontWeight:800, fontSize:"1.2rem", color: tAvg==="–"?"#94a3b8":scoreColor(tAvgNum), fontFamily:"'Playfair Display',serif" }}>{tAvg}</span>
+                          <div style={{ display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap" }}>
+                            {tGrades.length > 0 && <span style={{ fontSize:"0.78rem", color:"#64748b" }}>{tGrades.length} eval.</span>}
+                            {hasOverride && computedAvg && (
+                              <span style={{ fontSize:"0.76rem", color:"#94a3b8", textDecoration:"line-through" }}>{computedAvg}</span>
+                            )}
+                            <span style={{ fontWeight:800, fontSize:"1.2rem", color:isNaN(displayNum)?"#94a3b8":scoreColor(displayNum), fontFamily:"'Playfair Display',serif" }}>{displayAvg}</span>
+                            {hasOverride && <span style={{ fontSize:"0.72rem", background:"#fef3c7", color:"#92400e", border:"1px solid #fde68a", borderRadius:"10px", padding:"1px 7px", fontWeight:700 }}>✏️ editado</span>}
                             <span style={{ fontSize:"0.72rem", color:"#94a3b8" }}>prom.</span>
+                            {editingTrim === t ? (
+                              <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
+                                <input
+                                  type="number" min="0" max="10" step="0.01"
+                                  value={editValue}
+                                  onChange={e => setEditValue(e.target.value)}
+                                  onKeyDown={e => e.key === "Enter" && saveExtOverride(t)}
+                                  style={{ width:"70px", padding:"4px 8px", borderRadius:"6px", border:"1.5px solid #3b82f6", fontSize:"0.88rem", textAlign:"center" }}
+                                  autoFocus
+                                />
+                                <button onClick={() => saveExtOverride(t)} style={{ padding:"4px 10px", borderRadius:"6px", background:"#3b82f6", border:"none", color:"white", fontWeight:700, cursor:"pointer", fontSize:"0.82rem" }}>✓</button>
+                                <button onClick={() => setEditingTrim(null)} style={{ padding:"4px 10px", borderRadius:"6px", background:"#f1f5f9", border:"none", color:"#64748b", cursor:"pointer", fontSize:"0.82rem" }}>✕</button>
+                              </div>
+                            ) : (
+                              <div style={{ display:"flex", gap:"4px" }}>
+                                <button
+                                  onClick={() => { setEditingTrim(t); setEditValue(hasOverride ? String(extOverride[t]) : (computedAvg || "")); }}
+                                  title="Editar promedio del trimestre"
+                                  style={{ padding:"3px 8px", borderRadius:"6px", background:"#eff6ff", border:"1px solid #bfdbfe", color:"#2563eb", cursor:"pointer", fontSize:"0.78rem", fontWeight:700 }}>
+                                  ✏️ Editar
+                                </button>
+                                {hasOverride && (
+                                  <button
+                                    onClick={() => deleteExtOverride(t)}
+                                    title="Quitar override"
+                                    style={{ padding:"3px 8px", borderRadius:"6px", background:"#fef2f2", border:"1px solid #fecaca", color:"#dc2626", cursor:"pointer", fontSize:"0.78rem" }}>
+                                    ✕
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
@@ -1574,7 +1658,9 @@ function StudentGradesTab({ user, subject, subjects, setSaving }) {
 // ═══════════════════════════════════════════════════════════════════
 // VISTA MASIVA — tabla de promedios por curso
 // ═══════════════════════════════════════════════════════════════════
-function BulkAveragesView({ user, subject, allTeacherGrades, loadingAll, ensureTeacherGrades, onSelectStudent }) {
+function BulkAveragesView({ user, subject, allTeacherGrades, externalGrades, loadingAll, ensureTeacherGrades, onSelectStudent }) {
+  const extLookup = {};
+  (externalGrades || []).forEach(e => { extLookup[`${e.studentId}__${e.subject}__${e.trimester}`] = e.average; });
   const [selectedGrade, setSelectedGrade] = useState(GRADES[0]);
   const [courseStudents, setCourseStudents] = useState([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
@@ -1596,8 +1682,10 @@ function BulkAveragesView({ user, subject, allTeacherGrades, loadingAll, ensureT
     setLoaded(true);
   }
 
-  // Calcular promedio de un alumno en un trimestre
+  // Calcular promedio de un alumno en un trimestre (con soporte de overrides)
   function trimAvg(studentId, trim) {
+    const extKey = `${studentId}__${subject}__${trim}`;
+    if (extLookup[extKey] !== undefined) return String(extLookup[extKey]);
     if (!allTeacherGrades) return "–";
     const gs = allTeacherGrades.filter(
       g => g.studentId === studentId && g.subject === subject && g.trimester === trim
@@ -1606,13 +1694,9 @@ function BulkAveragesView({ user, subject, allTeacherGrades, loadingAll, ensureT
   }
 
   function generalAvg(studentId) {
-    if (!allTeacherGrades) return "–";
-    // Promedio anual = promedio de los promedios por trimestre (cada trim vale 1/3)
     const trimAvgs = [1, 2, 3].map(trim => {
-      const gs = allTeacherGrades.filter(
-        g => g.studentId === studentId && g.subject === subject && g.trimester === trim
-      );
-      return gs.length > 0 ? parseFloat(avg(gs.map(g => g.score))) : null;
+      const v = trimAvg(studentId, trim);
+      return v !== "–" ? parseFloat(v) : null;
     }).filter(v => v !== null);
     return trimAvgs.length > 0 ? avg(trimAvgs) : "–";
   }
