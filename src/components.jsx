@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import {
   getAllStudents, getAllGrades,
   getCourseObservations, createCourseObservation, deleteCourseObservation,
-  getUpcomingFiltered,
+  getUpcomingFiltered, getAllExternalGrades,
 } from "./db";
 
 // ─── Helpers globales ─────────────────────────────────────────────
@@ -598,14 +598,17 @@ export function getCurrentTrimester() {
 }
 
 // Computes carrying/at-risk status per subject for a single student's grades
-export function computeSubjectStatuses(grades) {
+export function computeSubjectStatuses(grades, extLookup = {}) {
   const subjects = [...new Set(grades.map(g => g.subject).filter(Boolean))].sort();
+  const studentId = grades[0]?.studentId;
   const currentTrimNum = getCurrentTrimester();
   const currentIdx = currentTrimNum - 1;
   const t3InProgress = currentTrimNum === 3;
   return subjects.map(subject => {
     const sg = grades.filter(g => g.subject === subject);
     const t = [1,2,3].map(trim => {
+      const extKey = `${studentId}__${subject}__${trim}`;
+      if (extLookup[extKey] !== undefined) return extLookup[extKey];
       const scores = sg.filter(g => g.trimester === trim).map(g => g.score);
       return scores.length ? parseFloat((scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(2)) : null;
     });
@@ -639,10 +642,16 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
 
   const [selectedSubject, setSelectedSubject] = useState(defaultSubject || allSubjects[0] || "");
   const [gradeFilter, setGradeFilter] = useState("");
-  const [activeIds, setActiveIds] = useState(null); // null = cargando
+  const [activeIds, setActiveIds] = useState(null);
+  const [extLookup, setExtLookup] = useState({});
 
   useEffect(() => {
-    getAllStudents().then(list => setActiveIds(new Set(list.map(s => s.id))));
+    Promise.all([getAllStudents(), getAllExternalGrades()]).then(([list, ext]) => {
+      setActiveIds(new Set(list.map(s => s.id)));
+      const lookup = {};
+      ext.forEach(e => { lookup[`${e.studentId}__${e.subject}__${e.trimester}`] = e.average; });
+      setExtLookup(lookup);
+    });
   }, []);
 
   const subjectGrades = selectedSubject
@@ -664,6 +673,8 @@ export function SubjectStatusTab({ grades, subjects, defaultSubject }) {
       .filter(s => !gradeFilter || s.grade === gradeFilter)
       .map(s => {
         const t = [1,2,3].map(trim => {
+          const extKey = `${s.id}__${selectedSubject}__${trim}`;
+          if (extLookup[extKey] !== undefined) return extLookup[extKey];
           const scores = s.entries.filter(g => g.trimester === trim).map(g => g.score);
           return scores.length ? parseFloat((scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(2)) : null;
         });
