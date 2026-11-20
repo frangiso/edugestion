@@ -2291,11 +2291,11 @@ function TeacherCierreTab({ grades }) {
           {allSubjects.map(s=><option key={s} value={s}>{s}</option>)}
         </select>
         <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}
-          style={{ flex:"1 1 140px", padding:"8px 10px", borderRadius:"8px", border:"1.5px solid #e2e8f0", fontSize:"0.88rem" }}>
-          <option value="">Todos</option>
-          <option value="aprueba">✅ Aprueba</option>
-          <option value="rendir">📝 Debe rendir</option>
-          <option value="incompleto">⏳ Sin completar</option>
+          style={{ flex:"1 1 160px", padding:"8px 10px", borderRadius:"8px", border:"1.5px solid #e2e8f0", fontSize:"0.88rem" }}>
+          <option value="">Todos los resultados</option>
+          <option value="aprueba">✅ Solo aprueban</option>
+          <option value="rendir">📝 Solo deben rendir</option>
+          <option value="incompleto">⏳ Solo sin completar</option>
         </select>
         <button onClick={() => {
           const doc = new jsPDF({ orientation:"landscape", unit:"mm", format:"a4" });
@@ -2344,15 +2344,25 @@ function TeacherCierreTab({ grades }) {
 
       <div style={{ display:"flex", gap:"10px", marginBottom:"20px", flexWrap:"wrap" }}>
         {[
-          { label:"✅ Aprueban", val:counts.aprueba, bg:"#f0fdf4", border:"#86efac", color:"#15803d" },
-          { label:"📝 Deben rendir", val:counts.rendir, bg:"#fff7ed", border:"#fdba74", color:"#c2410c" },
-          { label:"⏳ Sin completar", val:counts.incompleto, bg:"#f8fafc", border:"#e2e8f0", color:"#94a3b8" },
-        ].map(c => (
-          <div key={c.label} style={{ flex:"1 1 140px", padding:"12px 16px", borderRadius:"10px", background:c.bg, border:`1px solid ${c.border}` }}>
-            <div style={{ fontSize:"0.72rem", color:c.color, fontWeight:700, textTransform:"uppercase" }}>{c.label}</div>
-            <div style={{ fontWeight:800, fontSize:"1.6rem", color:c.color, fontFamily:"'Playfair Display',serif" }}>{c.val}</div>
-          </div>
-        ))}
+          { key:"aprueba",   label:"✅ Aprueban",       val:counts.aprueba,    bg:"#f0fdf4", border:"#86efac", color:"#15803d", activeBg:"#dcfce7", activeBorder:"#22c55e" },
+          { key:"rendir",    label:"📝 Deben rendir",   val:counts.rendir,     bg:"#fff7ed", border:"#fdba74", color:"#c2410c", activeBg:"#ffedd5", activeBorder:"#f97316" },
+          { key:"incompleto",label:"⏳ Sin completar",  val:counts.incompleto, bg:"#f8fafc", border:"#e2e8f0", color:"#94a3b8", activeBg:"#f1f5f9", activeBorder:"#94a3b8" },
+        ].map(c => {
+          const isActive = filterStatus === c.key;
+          return (
+            <div key={c.key}
+              onClick={() => setFilterStatus(isActive ? "" : c.key)}
+              style={{ flex:"1 1 140px", padding:"12px 16px", borderRadius:"10px", cursor:"pointer", userSelect:"none",
+                background: isActive ? c.activeBg : c.bg,
+                border: `2px solid ${isActive ? c.activeBorder : c.border}`,
+                boxShadow: isActive ? `0 0 0 3px ${c.activeBorder}33` : "none",
+                transition:"all 0.15s" }}>
+              <div style={{ fontSize:"0.72rem", color:c.color, fontWeight:700, textTransform:"uppercase" }}>{c.label}</div>
+              <div style={{ fontWeight:800, fontSize:"1.6rem", color:c.color, fontFamily:"'Playfair Display',serif" }}>{c.val}</div>
+              {isActive && <div style={{ fontSize:"0.68rem", color:c.color, marginTop:"2px", fontWeight:600 }}>Filtro activo · clic para quitar</div>}
+            </div>
+          );
+        })}
       </div>
 
       {Object.keys(byGrade).length === 0 ? (
