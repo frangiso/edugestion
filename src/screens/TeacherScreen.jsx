@@ -1450,6 +1450,7 @@ function StudentGradesTab({ user, subject, subjects, setSaving }) {
           loadingAll={loadingAll}
           ensureTeacherGrades={ensureTeacherGrades}
           onSelectStudent={(s) => { handleModeChange("individual"); selectStudent(s); }}
+          setExternalGrades={setExternalGrades}
         />
       )}
 
@@ -1658,7 +1659,7 @@ function StudentGradesTab({ user, subject, subjects, setSaving }) {
 // ═══════════════════════════════════════════════════════════════════
 // VISTA MASIVA — tabla de promedios por curso
 // ═══════════════════════════════════════════════════════════════════
-function BulkAveragesView({ user, subject, allTeacherGrades, externalGrades, loadingAll, ensureTeacherGrades, onSelectStudent }) {
+function BulkAveragesView({ user, subject, allTeacherGrades, externalGrades, setExternalGrades, loadingAll, ensureTeacherGrades, onSelectStudent }) {
   const extLookup = {};
   (externalGrades || []).forEach(e => { extLookup[`${e.studentId}__${e.subject}__${e.trimester}`] = e.average; });
   const [selectedGrade, setSelectedGrade] = useState(GRADES[0]);
@@ -1666,6 +1667,30 @@ function BulkAveragesView({ user, subject, allTeacherGrades, externalGrades, loa
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [expandedCell, setExpandedCell] = useState(null); // {studentId, trim}
+  const [editingCell, setEditingCell] = useState(null); // {studentId, trim}
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function saveOverride(studentId, studentName, studentGradeYear, trim) {
+    const val = parseFloat(editValue.replace(",","."));
+    if (isNaN(val) || val < 0 || val > 10) { alert("Ingresá un valor entre 0 y 10"); return; }
+    setSaving(true);
+    await upsertExternalGrade({ studentId, studentName, studentGrade: studentGradeYear || "", subject, trimester: trim, average: val, createdBy: user.uid });
+    const updated = await getAllExternalGrades();
+    setExternalGrades(updated);
+    setEditingCell(null);
+    setSaving(false);
+  }
+
+  async function removeOverride(studentId, trim) {
+    const entry = (externalGrades || []).find(e => e.studentId === studentId && e.subject === subject && e.trimester === trim);
+    if (!entry) return;
+    setSaving(true);
+    await deleteExternalGrade(entry.id);
+    const updated = await getAllExternalGrades();
+    setExternalGrades(updated);
+    setSaving(false);
+  }
 
   // Cargar alumnos del curso seleccionado y las notas del profe
   useEffect(() => {
@@ -1759,11 +1784,49 @@ function BulkAveragesView({ user, subject, allTeacherGrades, externalGrades, loa
                       const vNum = parseFloat(v);
                       const gs = cellGrades(trim);
                       const isExp = expandedCell?.studentId===s.id && expandedCell?.trim===trim;
+                      const extKey = `${s.id}__${subject}__${trim}`;
+                      const hasOverride = extLookup[extKey] !== undefined;
+                      const isEditing = editingCell?.studentId===s.id && editingCell?.trim===trim;
                       return (
-                        <td key={trim} onClick={() => gs.length>0 && toggleCell(trim)}
-                            style={{ padding:"12px 16px", textAlign:"center", cursor:gs.length>0?"pointer":"default", background:isExp?"#dbeafe":"inherit", transition:"background 0.15s" }}>
-                          <span style={{ fontWeight:700, color: v==="–"?"#cbd5e1":scoreColor(vNum), fontSize:"1rem" }}>{v}</span>
-                          {gs.length>0 && <span style={{ marginLeft:"3px", fontSize:"0.65rem", color:"#93c5fd" }}>{isExp?"▲":"▼"}</span>}
+                        <td key={trim} style={{ padding:"8px 12px", textAlign:"center", background:isExp?"#dbeafe":hasOverride?"#fefce8":"inherit", transition:"background 0.15s", minWidth:"110px" }}>
+                          {isEditing ? (
+                            <div style={{ display:"flex", alignItems:"center", gap:"4px", justifyContent:"center" }}>
+                              <input
+                                type="number" min="0" max="10" step="0.01"
+                                value={editValue}
+                                onChange={e => setEditValue(e.target.value)}
+                                onKeyDown={e => { if(e.key==="Enter") saveOverride(s.id, s.name, s.grade, trim); if(e.key==="Escape") setEditingCell(null); }}
+                                style={{ width:"60px", padding:"3px 6px", borderRadius:"6px", border:"1.5px solid #3b82f6", fontSize:"0.88rem", textAlign:"center" }}
+                                autoFocus
+                                disabled={saving}
+                              />
+                              <button onClick={() => saveOverride(s.id, s.name, s.grade, trim)} disabled={saving}
+                                style={{ padding:"3px 7px", borderRadius:"5px", background:"#3b82f6", border:"none", color:"white", fontWeight:700, cursor:"pointer", fontSize:"0.78rem" }}>✓</button>
+                              <button onClick={() => setEditingCell(null)}
+                                style={{ padding:"3px 7px", borderRadius:"5px", background:"#f1f5f9", border:"none", color:"#64748b", cursor:"pointer", fontSize:"0.78rem" }}>✕</button>
+                            </div>
+                          ) : (
+                            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:"2px" }}>
+                              <div style={{ display:"flex", alignItems:"center", gap:"4px" }}>
+                                <span style={{ fontWeight:700, color: v==="–"?"#cbd5e1":scoreColor(vNum), fontSize:"1rem" }}>{v}</span>
+                                {gs.length>0 && <span onClick={() => toggleCell(trim)} style={{ fontSize:"0.65rem", color:"#93c5fd", cursor:"pointer" }}>{isExp?"▲":"▼"}</span>}
+                              </div>
+                              <div style={{ display:"flex", gap:"3px" }}>
+                                <button
+                                  onClick={() => { setEditingCell({studentId:s.id,trim}); setEditValue(hasOverride?String(extLookup[extKey]):(v!=="–"?v:"")); setExpandedCell(null); }}
+                                  style={{ padding:"1px 6px", borderRadius:"4px", background:"#eff6ff", border:"1px solid #bfdbfe", color:"#2563eb", cursor:"pointer", fontSize:"0.68rem", fontWeight:700 }}>
+                                  ✏️
+                                </button>
+                                {hasOverride && (
+                                  <button onClick={() => removeOverride(s.id, trim)}
+                                    style={{ padding:"1px 6px", borderRadius:"4px", background:"#fef2f2", border:"1px solid #fecaca", color:"#dc2626", cursor:"pointer", fontSize:"0.68rem" }}>
+                                    ✕
+                                  </button>
+                                )}
+                              </div>
+                              {hasOverride && <span style={{ fontSize:"0.6rem", color:"#92400e", fontWeight:700 }}>editado</span>}
+                            </div>
+                          )}
                         </td>
                       );
                     })}
